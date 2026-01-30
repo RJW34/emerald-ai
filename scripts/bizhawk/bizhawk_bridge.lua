@@ -25,8 +25,18 @@ Commands:
     GAMECODE                - Get game code
 ]]
 
--- Configuration - CHANGE THIS PATH to match your project location
-local SCRIPT_DIR = "D:/Projects with Claude/REALCLAUDEEMERALD/scripts/bizhawk/"
+-- Configuration - Auto-detect script directory from Lua source path
+local SCRIPT_DIR = nil
+local info = debug.getinfo(1, "S")
+if info and info.source then
+    local source = info.source:gsub("^@", "")
+    -- Handle both Windows and Linux paths
+    SCRIPT_DIR = source:match("(.+)[/\\]") or "."
+    SCRIPT_DIR = SCRIPT_DIR .. "/"
+end
+-- Fallback if auto-detect fails
+SCRIPT_DIR = SCRIPT_DIR or "/home/ryan/projects/emerald-ai/scripts/bizhawk/"
+
 local COMMAND_FILE = SCRIPT_DIR .. "command.txt"
 local RESPONSE_FILE = SCRIPT_DIR .. "response.txt"
 local LOCK_FILE = SCRIPT_DIR .. "lock.txt"
