@@ -243,10 +243,24 @@ class BattleAI:
         # === Speed consideration ===
         we_outspeed = player.speed > enemy.speed
         
-        # If we don't outspeed, prioritize survival
-        if not we_outspeed and ctx.phase == BattlePhase.ENDGAME:
-            # Prioritize priority moves
-            if move.priority > 0:
+        # If we don't outspeed and might die, prioritize KO moves and priority
+        if not we_outspeed:
+            # Estimate enemy's best damage against us
+            enemy_threat = self._estimate_enemy_threat(enemy, player, ctx)
+            
+            if enemy_threat >= player.hp:
+                # We might die next turn! Priority moves are critical
+                if move.priority > 0:
+                    score += 150
+                # Guaranteed KO saves us even if we're slower
+                if min_dmg >= enemy.hp:
+                    score += 100
+                # Possible KO still worth trying
+                elif max_dmg >= enemy.hp:
+                    score += 50
+            
+            # Even if not dying, priority moves matter when outsped
+            if ctx.phase == BattlePhase.ENDGAME and move.priority > 0:
                 score += 80
         
         # === Status move scoring ===
@@ -270,6 +284,21 @@ class BattleAI:
                 score += 15
         
         return score
+    
+    def _estimate_enemy_threat(
+        self, enemy: Pokemon, player: Pokemon, ctx: BattleContext
+    ) -> int:
+        """Estimate the max damage the enemy could deal to us this turn."""
+        max_threat = 0
+        for move in enemy.moves:
+            if move.pp <= 0 or move.power == 0:
+                continue
+            _, max_dmg = self.handler.estimate_damage(
+                move, enemy, player, ctx.state.weather
+            )
+            if max_dmg > max_threat:
+                max_threat = max_dmg
+        return max_threat
     
     def _score_status_move(
         self, move: Move, player: Pokemon, enemy: Pokemon, ctx: BattleContext
@@ -354,6 +383,13 @@ class BattleAI:
             switch_threshold = 20.0
         elif player.hp_percentage < 40:
             switch_threshold = 35.0
+        
+        # If enemy outspeeds and can KO us, switching is more urgent
+        enemy_threat = self._estimate_enemy_threat(enemy, player, ctx)
+        if enemy_threat >= player.hp and player.speed < enemy.speed:
+            switch_threshold = 15.0
+            # Boost the best switch candidate
+            best_score += 30
         
         if best_score > switch_threshold:
             return (best_score, best_idx)
