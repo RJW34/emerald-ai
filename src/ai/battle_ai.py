@@ -286,12 +286,18 @@ class BattleAI:
         if enemy.has_status:
             return 2.0
         
-        # Status moves are better early in battle
-        if ctx.turns_in_battle <= 2:
-            score += 20
+        # Status moves are only worth it against tough enemies
+        # Don't waste turns debuffing a Lv2 Poochyena
+        level_diff = enemy.level - player.level
+        if level_diff < -5:
+            return 3.0  # Enemy is much weaker, just attack
+        
+        # Status moves are better early in battle against real threats
+        if ctx.turns_in_battle <= 2 and level_diff >= -2:
+            score += 15
         
         # Higher value against tanky enemies
-        if enemy.hp_percentage > 80:
+        if enemy.hp_percentage > 80 and enemy.max_hp > player.max_hp * 0.5:
             score += 10
         
         return score
