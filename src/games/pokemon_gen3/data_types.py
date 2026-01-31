@@ -300,6 +300,8 @@ class Move:
     accuracy: int = 100
     priority: int = 0
     is_contact: bool = False
+    is_recoil: bool = False
+    is_high_crit: bool = False
     target: str = "single"  # single, all_opponents, self, ally, etc.
 
     @property

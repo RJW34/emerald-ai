@@ -13,7 +13,7 @@ Gen 3 physical/special split is TYPE-BASED:
 from ..games.pokemon_gen3.data_types import PokemonType, Move
 
 # (name, type, power, accuracy, pp, priority, flags)
-# flags: C=contact, S=sound-based, P=punch, B=bite
+# flags: C=contact, S=sound-based, P=punch, B=bite, R=recoil, H=high-crit
 _MOVE_TABLE: dict[int, tuple] = {
     # === Normal Moves ===
     1:   ("Pound",         PokemonType.NORMAL,   40, 100, 35, 0, "C"),
@@ -48,9 +48,9 @@ _MOVE_TABLE: dict[int, tuple] = {
     33:  ("Tackle",        PokemonType.NORMAL,   35, 95,  35, 0, "C"),
     34:  ("Body Slam",     PokemonType.NORMAL,   85, 100, 15, 0, "C"),
     35:  ("Wrap",          PokemonType.NORMAL,   15, 85,  20, 0, "C"),
-    36:  ("Take Down",     PokemonType.NORMAL,   90, 85,  20, 0, "C"),
+    36:  ("Take Down",     PokemonType.NORMAL,   90, 85,  20, 0, "CR"),
     37:  ("Thrash",        PokemonType.NORMAL,   90, 100, 20, 0, "C"),
-    38:  ("Double-Edge",   PokemonType.NORMAL,  120, 100, 15, 0, "C"),
+    38:  ("Double-Edge",   PokemonType.NORMAL,  120, 100, 15, 0, "CR"),
     39:  ("Tail Whip",     PokemonType.NORMAL,    0, 100, 30, 0, ""),
     40:  ("Poison Sting",  PokemonType.POISON,   15, 100, 35, 0, ""),
     41:  ("Twineedle",     PokemonType.BUG,      25, 100, 20, 0, ""),
@@ -78,7 +78,7 @@ _MOVE_TABLE: dict[int, tuple] = {
     63:  ("Hyper Beam",    PokemonType.NORMAL,  150, 90,   5, 0, ""),
     64:  ("Peck",          PokemonType.FLYING,   35, 100, 35, 0, "C"),
     65:  ("Drill Peck",    PokemonType.FLYING,   80, 100, 20, 0, "C"),
-    66:  ("Submission",    PokemonType.FIGHTING, 80, 80,  25, 0, "C"),
+    66:  ("Submission",    PokemonType.FIGHTING, 80, 80,  25, 0, "CR"),
     67:  ("Low Kick",      PokemonType.FIGHTING,  0, 100, 20, 0, "C"),  # Weight-based
     68:  ("Counter",       PokemonType.FIGHTING,  0, 100, 20, -5, "C"),
     69:  ("Seismic Toss",  PokemonType.FIGHTING,  0, 100, 20, 0, "C"),  # Level-based
@@ -87,7 +87,7 @@ _MOVE_TABLE: dict[int, tuple] = {
     72:  ("Mega Drain",    PokemonType.GRASS,    40, 100, 10, 0, ""),
     73:  ("Leech Seed",    PokemonType.GRASS,     0, 90,  10, 0, ""),
     74:  ("Growth",        PokemonType.NORMAL,    0,   0, 40, 0, ""),
-    75:  ("Razor Leaf",    PokemonType.GRASS,    55, 95,  25, 0, ""),
+    75:  ("Razor Leaf",    PokemonType.GRASS,    55, 95,  25, 0, "H"),
     76:  ("Solar Beam",    PokemonType.GRASS,   120, 100, 10, 0, ""),
     77:  ("Poison Powder", PokemonType.POISON,    0, 75,  35, 0, ""),
     78:  ("Stun Spore",    PokemonType.GRASS,     0, 75,  30, 0, ""),
@@ -164,7 +164,7 @@ _MOVE_TABLE: dict[int, tuple] = {
     149: ("Psywave",       PokemonType.PSYCHIC,   0, 80,  15, 0, ""),  # Random dmg
     150: ("Splash",        PokemonType.NORMAL,    0,   0, 40, 0, ""),
     151: ("Acid Armor",    PokemonType.POISON,    0,   0, 40, 0, ""),
-    152: ("Crabhammer",    PokemonType.WATER,    90, 85,  10, 0, "C"),
+    152: ("Crabhammer",    PokemonType.WATER,    90, 85,  10, 0, "CH"),
     153: ("Explosion",     PokemonType.NORMAL,  250, 100,  5, 0, ""),
     154: ("Fury Swipes",   PokemonType.NORMAL,   18, 80,  15, 0, "C"),
     155: ("Bonemerang",    PokemonType.GROUND,   50, 90,  10, 0, ""),
@@ -175,7 +175,7 @@ _MOVE_TABLE: dict[int, tuple] = {
     160: ("Conversion",    PokemonType.NORMAL,    0,   0, 30, 0, ""),
     161: ("Tri Attack",    PokemonType.NORMAL,   80, 100, 10, 0, ""),
     162: ("Super Fang",    PokemonType.NORMAL,    0, 90,  10, 0, "C"),  # Halves HP
-    163: ("Slash",         PokemonType.NORMAL,   70, 100, 20, 0, "C"),
+    163: ("Slash",         PokemonType.NORMAL,   70, 100, 20, 0, "CH"),
     164: ("Substitute",    PokemonType.NORMAL,    0,   0, 10, 0, ""),
     165: ("Struggle",      PokemonType.NORMAL,   50, 100,  1, 0, "C"),  # Emergency
     # Gen 2+ moves
@@ -288,7 +288,7 @@ _MOVE_TABLE: dict[int, tuple] = {
     296: ("Mist Ball",     PokemonType.PSYCHIC,  70, 100,  5, 0, ""),
     297: ("Feather Dance", PokemonType.FLYING,    0, 100, 15, 0, ""),
     298: ("Teeter Dance",  PokemonType.NORMAL,    0, 100, 20, 0, ""),
-    299: ("Blaze Kick",    PokemonType.FIRE,     85, 90,  10, 0, "C"),
+    299: ("Blaze Kick",    PokemonType.FIRE,     85, 90,  10, 0, "CH"),
     300: ("Mud Sport",     PokemonType.GROUND,    0,   0, 15, 0, ""),
     301: ("Ice Ball",      PokemonType.ICE,      30, 90,  20, 0, "C"),
     302: ("Needle Arm",    PokemonType.GRASS,    60, 100, 15, 0, "C"),
@@ -333,7 +333,7 @@ _MOVE_TABLE: dict[int, tuple] = {
     341: ("Mud Shot",      PokemonType.GROUND,   55, 95,  15, 0, ""),
     342: ("Poison Tail",   PokemonType.POISON,   50, 100, 25, 0, "C"),
     343: ("Covet",         PokemonType.NORMAL,   40, 100, 40, 0, "C"),
-    344: ("Volt Tackle",   PokemonType.ELECTRIC, 120, 100, 15, 0, "C"),
+    344: ("Volt Tackle",   PokemonType.ELECTRIC, 120, 100, 15, 0, "CR"),
     345: ("Magical Leaf",  PokemonType.GRASS,    60,   0, 20, 0, ""),  # Never misses
     346: ("Water Sport",   PokemonType.WATER,     0,   0, 15, 0, ""),
     347: ("Calm Mind",     PokemonType.PSYCHIC,   0,   0, 20, 0, ""),
@@ -369,6 +369,8 @@ def get_move_data(move_id: int) -> Move:
             pp=pp,  # Default to max; caller should override with actual PP
             priority=priority,
             is_contact="C" in flags,
+            is_recoil="R" in flags,
+            is_high_crit="H" in flags,
         )
     
     # Unknown move - return minimal data
@@ -397,6 +399,8 @@ def enrich_move(move: Move) -> Move:
         move.max_pp = max_pp
         move.priority = priority
         move.is_contact = "C" in flags
+        move.is_recoil = "R" in flags
+        move.is_high_crit = "H" in flags
     else:
         move.name = f"Move#{move.id}"
     

@@ -267,6 +267,40 @@ class BattleAI:
         if move.power == 0:
             score = self._score_status_move(move, player, enemy, ctx)
         
+        # === Recoil penalty ===
+        # Recoil moves hurt us — penalize based on our HP situation
+        if move.is_recoil and move.power > 0:
+            # Estimate recoil (typically 1/3 of damage dealt for Double-Edge, 1/4 for Take Down)
+            avg_dmg = (min_dmg + max_dmg) // 2 if max_dmg > 0 else 0
+            recoil_est = avg_dmg // 3
+            # Heavier penalty when HP is low
+            if player.hp_percentage < 30:
+                score -= 80  # Don't recoil-kill yourself
+            elif player.hp_percentage < 60:
+                score -= 30
+            else:
+                score -= 15
+            # Rock Head negates recoil
+            if player.ability == Ability.ROCK_HEAD:
+                score += 80  # Undo penalty, give bonus
+        
+        # === High crit rate bonus ===
+        # High-crit moves (Slash, Blaze Kick, etc.) have ~12.5% crit vs 6.25% normal
+        if move.is_high_crit:
+            score += 10  # Modest bonus for higher expected damage
+        
+        # === Pinch ability bonus ===
+        # Blaze/Torrent/Overgrow give +50% when HP < 1/3
+        if player.hp_percentage < 33.3:
+            if (player.ability == Ability.BLAZE and move.type == PokemonType.FIRE):
+                score *= 1.5
+            elif (player.ability == Ability.TORRENT and move.type == PokemonType.WATER):
+                score *= 1.5
+            elif (player.ability == Ability.OVERGROW and move.type == PokemonType.GRASS):
+                score *= 1.5
+            elif (player.ability == Ability.SWARM and move.type == PokemonType.BUG):
+                score *= 1.5
+        
         # === PP conservation ===
         # Penalize using high-PP moves when low-PP moves would work
         if move.pp <= 2:
@@ -300,10 +334,21 @@ class BattleAI:
                 max_threat = max_dmg
         return max_threat
     
+    # Known status-inflicting move IDs (Gen 3)
+    _SLEEP_MOVES = {47, 79, 95, 142, 147}  # Sing, Sleep Powder, Hypnosis, Lovely Kiss, Spore
+    _PARA_MOVES = {78, 86, 137}  # Stun Spore, Thunder Wave, Glare
+    _TOXIC_MOVES = {92}  # Toxic
+    _POISON_MOVES = {77, 139}  # Poison Powder, Poison Gas
+    _CONFUSE_MOVES = {48, 50, 109, 186}  # Supersonic, Disable, Confuse Ray, Sweet Kiss
+    _BURN_MOVES = {261}  # Will-O-Wisp
+    _STAT_BOOST_MOVES = {14, 74, 97, 104, 106, 133, 151, 156, 159, 334, 339, 347, 349}
+    # Swords Dance, Growth, Agility, Double Team, Harden, Amnesia, Acid Armor,
+    # Rest, Belly Drum, Iron Defense, Bulk Up, Calm Mind, Dragon Dance
+    
     def _score_status_move(
         self, move: Move, player: Pokemon, enemy: Pokemon, ctx: BattleContext
     ) -> float:
-        """Score a status/support move."""
+        """Score a status/support move with move-specific logic."""
         # Base: low priority
         score = 5.0
         
@@ -312,22 +357,67 @@ class BattleAI:
             return 0.0
         
         # If enemy is already statused, don't try to status again
-        if enemy.has_status:
+        if enemy.has_status and move.id not in self._STAT_BOOST_MOVES and move.id not in self._CONFUSE_MOVES:
             return 2.0
         
         # Status moves are only worth it against tough enemies
-        # Don't waste turns debuffing a Lv2 Poochyena
         level_diff = enemy.level - player.level
-        if level_diff < -5:
+        if level_diff < -5 and move.id not in self._STAT_BOOST_MOVES:
             return 3.0  # Enemy is much weaker, just attack
         
-        # Status moves are better early in battle against real threats
-        if ctx.turns_in_battle <= 2 and level_diff >= -2:
-            score += 15
+        # === Move-specific scoring ===
         
-        # Higher value against tanky enemies
-        if enemy.hp_percentage > 80 and enemy.max_hp > player.max_hp * 0.5:
-            score += 10
+        # Sleep is the best status — free turns
+        if move.id in self._SLEEP_MOVES:
+            score = 60.0
+            if ctx.turns_in_battle == 0:
+                score += 20  # Great opener
+        
+        # Paralysis: reduces speed + 25% chance can't move
+        elif move.id in self._PARA_MOVES:
+            score = 45.0
+            # Extra valuable if enemy outspeeds us
+            if enemy.speed > player.speed:
+                score += 25
+        
+        # Toxic: great vs tanky enemies
+        elif move.id in self._TOXIC_MOVES:
+            score = 35.0
+            if enemy.max_hp > player.max_hp * 0.8:
+                score += 20  # More valuable vs bulky foes
+        
+        # Will-O-Wisp: halves physical attack
+        elif move.id in self._BURN_MOVES:
+            score = 40.0
+            if enemy.attack > enemy.sp_attack:
+                score += 15  # More valuable vs physical attackers
+        
+        # Stat boosts: great when safe
+        elif move.id in self._STAT_BOOST_MOVES:
+            score = 30.0
+            # Safe to boost if we resist enemy or they're weak
+            enemy_threat = self._estimate_enemy_threat(enemy, player, ctx)
+            if enemy_threat < player.hp * 0.3:
+                score += 40  # Very safe to set up
+            elif enemy_threat < player.hp * 0.5:
+                score += 20
+            # Swords Dance / Dragon Dance are premium
+            if move.id in {14, 349}:  # Swords Dance, Dragon Dance
+                score += 15
+            # Calm Mind
+            if move.id == 347:
+                score += 10
+        
+        # Confusion moves
+        elif move.id in self._CONFUSE_MOVES:
+            score = 25.0
+        
+        # Generic status move
+        else:
+            if ctx.turns_in_battle <= 2 and level_diff >= -2:
+                score += 15
+            if enemy.hp_percentage > 80 and enemy.max_hp > player.max_hp * 0.5:
+                score += 10
         
         return score
     
