@@ -11,6 +11,7 @@ Prerequisites:
 """
 
 import logging
+import os
 import time
 import uuid
 from pathlib import Path
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # Default IPC directory (same as Lua script location)
 # Resolves to: emerald-ai/scripts/bizhawk/
-DEFAULT_IPC_DIR = Path(__file__).resolve().parent.parent.parent / "scripts" / "bizhawk"
+DEFAULT_IPC_DIR = Path(os.environ.get("BIZHAWK_IPC_DIR", str(Path(__file__).resolve().parent.parent.parent / "scripts" / "bizhawk")))
 
 
 class BizHawkClient:

@@ -1,0 +1,48 @@
+{
+  "timestamp": 1770585427.1808233,
+  "badges": {
+    "stone": false,
+    "knuckle": false,
+    "dynamo": false,
+    "heat": false,
+    "balance": false,
+    "feather": false,
+    "mind": false,
+    "rain": false
+  },
+  "story": {
+    "has_starter": false,
+    "has_pokedex": false,
+    "has_pokenav": false,
+    "clock_set": false,
+    "elite_four_cleared": false,
+    "rayquaza_caught": false,
+    "groudon_caught": false,
+    "kyogre_caught": false,
+    "regirock_caught": false,
+    "regice_caught": false,
+    "registeel_caught": false,
+    "latias_caught": false,
+    "latios_caught": false
+  },
+  "pokedex": {
+    "seen": 0,
+    "caught": 0,
+    "target_caught": 202
+  },
+  "party": {
+    "count": 0,
+    "total_levels": 0,
+    "highest_level": 0,
+    "all_healthy": false
+  },
+  "playtime": {
+    "hours": 0,
+    "minutes": 0,
+    "seconds": 0
+  },
+  "map_group": 0,
+  "map_num": 0,
+  "player_x": 0,
+  "player_y": 0
+}
