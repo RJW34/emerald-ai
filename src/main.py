@@ -71,6 +71,13 @@ class EmeraldAI:
         self._last_state = PokemonGen3State.UNKNOWN
         self._stuck_counter = 0
         
+        # Overworld navigation state
+        self._current_direction = None
+        self._direction_persist_ticks = 0
+        self._direction_persist_target = 0
+        self._last_position = (0, 0)
+        self._position_stuck_counter = 0
+        
         # Stats
         self._battles_won = 0
         self._battles_fled = 0
@@ -296,14 +303,50 @@ class EmeraldAI:
         self.input.tap("A")
 
     def _handle_overworld(self):
-        """Handle overworld navigation."""
-        # TODO: Implement pathfinding
-        # For now, basic movement
+        """
+        Handle overworld navigation using random walk with direction persistence.
+        
+        Strategy:
+        - Pick a random direction and walk in it for several ticks
+        - Check if position is changing (detect walls/obstacles)
+        - If stuck, immediately pick a new direction
+        - Walking randomly will trigger wild battles naturally
+        """
+        import random
+        
+        # Get current position
         pos = self.state_detector.get_player_position()
         map_loc = self.state_detector.get_map_location()
         
-        if self._ticks_in_state % 10 == 0:
+        # Log position periodically
+        if self._ticks_in_state % 20 == 0:
             logger.debug(f"Overworld: pos={pos}, map={map_loc}")
+        
+        # Check if position has changed since last tick
+        if pos == self._last_position:
+            self._position_stuck_counter += 1
+        else:
+            self._position_stuck_counter = 0
+            self._last_position = pos
+        
+        # If stuck in same position for 3+ ticks, we hit a wall - change direction immediately
+        if self._position_stuck_counter >= 3:
+            logger.debug(f"Hit obstacle at {pos}, changing direction")
+            self._current_direction = None
+            self._direction_persist_ticks = 0
+            self._position_stuck_counter = 0
+        
+        # Direction persistence logic
+        if self._current_direction is None or self._direction_persist_ticks >= self._direction_persist_target:
+            # Pick new direction and duration
+            self._current_direction = random.choice(["Up", "Down", "Left", "Right"])
+            self._direction_persist_target = random.randint(5, 15)  # Walk 5-15 ticks in this direction
+            self._direction_persist_ticks = 0
+            logger.debug(f"New direction: {self._current_direction} for {self._direction_persist_target} ticks")
+        
+        # Move in current direction
+        self.input.tap(self._current_direction)
+        self._direction_persist_ticks += 1
 
     def _handle_unknown(self):
         """Handle unknown state - try pressing A/Start."""
