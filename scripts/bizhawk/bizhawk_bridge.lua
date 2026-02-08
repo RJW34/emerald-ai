@@ -242,6 +242,11 @@ local function process_commands()
     if not file_exists(COMMAND_FILE) then
         return
     end
+    
+    -- Skip if locked (Python is writing)
+    if file_exists(LOCK_FILE) then
+        return
+    end
 
     -- Read command file
     local content = read_file(COMMAND_FILE)
@@ -267,8 +272,10 @@ local function process_commands()
     -- Process the command
     local response = handle_command(cmd)
 
-    -- Write response with same ID
+    -- Write response with same ID (atomic - create lock, write, delete lock)
+    write_file(LOCK_FILE, "1")
     write_file(RESPONSE_FILE, id .. ":" .. response)
+    delete_file(LOCK_FILE)
 
     -- Remember this command ID
     last_command_id = id
@@ -288,10 +295,16 @@ delete_file(COMMAND_FILE)
 delete_file(RESPONSE_FILE)
 delete_file(LOCK_FILE)
 
--- Register frame callback
+-- Register frame callback with error protection
 event.onframeend(function()
-    process_commands()
-    process_buttons()
+    local ok, err = pcall(function()
+        process_commands()
+        process_buttons()
+    end)
+    if not ok then
+        print("[BRIDGE ERROR] " .. tostring(err))
+        -- Don't crash - keep the bridge alive
+    end
 end)
 
 print("")

@@ -50,6 +50,7 @@ class BizHawkClient:
 
         self.command_file = self.ipc_dir / "command.txt"
         self.response_file = self.ipc_dir / "response.txt"
+        self.lock_file = self.ipc_dir / "lock.txt"
 
     def connect(self) -> bool:
         """
@@ -90,18 +91,30 @@ class BizHawkClient:
         # Generate unique command ID
         cmd_id = str(uuid.uuid4())[:8]
 
-        # Write command file
+        # Write command file with locking
         try:
+            # Create lock, write command, delete lock
+            self.lock_file.write_text("1")
             with open(self.command_file, "w") as f:
                 f.write(f"{cmd_id}:{command}")
+            self.lock_file.unlink()
         except Exception as e:
             logger.error(f"Failed to write command: {e}")
+            try:
+                self.lock_file.unlink()
+            except:
+                pass
             return None
 
         # Wait for response
         start_time = time.time()
         while time.time() - start_time < self.timeout:
             try:
+                # Wait for lock to be released before reading
+                if self.lock_file.exists():
+                    time.sleep(self.poll_interval)
+                    continue
+                    
                 if self.response_file.exists():
                     with open(self.response_file, "r") as f:
                         content = f.read().strip()
