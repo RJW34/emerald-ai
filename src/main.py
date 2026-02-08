@@ -156,8 +156,8 @@ class EmeraldAI:
         else:
             self._ticks_in_state += 1
         
-        # Stuck detection
-        if self._ticks_in_state > 60:  # ~18 seconds stuck
+        # Stuck detection (skip in OVERWORLD - has its own position-based stuck handler)
+        if self._ticks_in_state > 60 and state != PokemonGen3State.OVERWORLD:
             self._handle_stuck()
         
         # Dispatch to handler
