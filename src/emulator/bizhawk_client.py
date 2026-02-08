@@ -91,19 +91,24 @@ class BizHawkClient:
         # Generate unique command ID
         cmd_id = str(uuid.uuid4())[:8]
 
-        # Write command file with locking
-        try:
-            # Create lock, write command, delete lock
-            self.lock_file.write_text("1")
-            with open(self.command_file, "w") as f:
-                f.write(f"{cmd_id}:{command}")
-            self.lock_file.unlink()
-        except Exception as e:
-            logger.error(f"Failed to write command: {e}")
+        # Write command file with retry (Lua may have file open for reading)
+        written = False
+        for attempt in range(20):  # ~1s total retry window
             try:
-                self.lock_file.unlink()
-            except:
-                pass
+                # Wait for Lua lock to clear
+                if self.lock_file.exists():
+                    time.sleep(self.poll_interval)
+                    continue
+                
+                with open(self.command_file, "w") as f:
+                    f.write(f"{cmd_id}:{command}")
+                written = True
+                break
+            except (PermissionError, OSError):
+                time.sleep(0.05)  # Brief pause before retry
+        
+        if not written:
+            logger.warning(f"Could not write command after retries: {command}")
             return None
 
         # Wait for response
