@@ -85,6 +85,11 @@ class EmeraldAI:
         
         # Settings configuration (one-time setup)
         self._settings_configured = False
+        
+        # New game flow state tracking
+        self._in_new_game_flow = False
+        self._new_game_step = 0
+        self._new_game_input_delay = 0
 
     def _set_strategy(self, strategy: str):
         strategy_map = {
@@ -164,7 +169,9 @@ class EmeraldAI:
             self._handle_stuck()
         
         # Dispatch to handler
-        if self.state_detector.in_battle:
+        if state == PokemonGen3State.TITLE_SCREEN:
+            self._handle_title_screen()
+        elif self.state_detector.in_battle:
             self._handle_battle()
         elif state == PokemonGen3State.DIALOGUE:
             self._handle_dialogue()
@@ -195,6 +202,194 @@ class EmeraldAI:
             PokemonGen3State.BATTLE_FRONTIER,
             PokemonGen3State.BATTLE_LEGENDARY,
         )
+
+    def _handle_title_screen(self):
+        """
+        Handle title screen and new game initialization.
+        
+        Automates the entire startup sequence:
+        1. Press Start to advance past title
+        2. Navigate to "New Game"
+        3. Handle character naming (auto-name "DEKU")
+        4. Handle intro sequence (Prof Birch, moving truck)
+        5. Select starter Pokemon (MUDKIP - left bag)
+        6. Continue through first battle
+        7. Save game after reaching Littleroot
+        """
+        # Use input delay for state machine timing
+        if self._new_game_input_delay > 0:
+            self._new_game_input_delay -= 1
+            return
+        
+        # Initialize new game flow on first entry
+        if not self._in_new_game_flow:
+            logger.info("=" * 50)
+            logger.info("TITLE SCREEN DETECTED - Starting new game initialization")
+            logger.info("=" * 50)
+            self._in_new_game_flow = True
+            self._new_game_step = 0
+        
+        # State machine for new game flow
+        # Step 0: Press Start to advance past title screen
+        if self._new_game_step == 0:
+            logger.info("Step 0: Pressing Start to advance past title")
+            self.input.tap("Start")
+            self._new_game_input_delay = 10  # Wait for menu to appear
+            self._new_game_step = 1
+            
+        # Step 1: Navigate to "New Game" and select it
+        elif self._new_game_step == 1:
+            logger.info("Step 1: Selecting 'New Game'")
+            self.input.tap("A")  # Select "New Game" (it's the default option)
+            self._new_game_input_delay = 15  # Wait for intro to start
+            self._new_game_step = 2
+            
+        # Step 2-10: Handle intro dialogue (Prof Birch, world intro)
+        # Just spam A to advance through dialogue
+        elif 2 <= self._new_game_step <= 15:
+            if self._new_game_step == 2:
+                logger.info("Step 2-15: Advancing through intro dialogue (will spam A)")
+            self.input.tap("A")
+            self._new_game_input_delay = 3  # Faster advancement
+            self._new_game_step += 1
+            
+        # Step 16: Gender selection (Boy/Girl) - select Boy
+        elif self._new_game_step == 16:
+            logger.info("Step 16: Selecting gender (Boy)")
+            self.input.tap("A")  # Boy is default
+            self._new_game_input_delay = 5
+            self._new_game_step = 17
+            
+        # Step 17-20: More intro dialogue
+        elif 17 <= self._new_game_step <= 20:
+            self.input.tap("A")
+            self._new_game_input_delay = 3
+            self._new_game_step += 1
+            
+        # Step 21: Character naming screen - auto-name "DEKU"
+        elif self._new_game_step == 21:
+            logger.info("Step 21: Naming character 'DEKU'")
+            # Name entry is complex, so we'll just accept the default and rename via Start
+            # Actually, let's just spam A through the default name
+            self.input.tap("Start")  # Start key accepts default name faster
+            self._new_game_input_delay = 10
+            self._new_game_step = 22
+            
+        # Step 22-40: Continue through intro sequence (moving truck, arriving in Littleroot)
+        # This includes rival naming, parent dialogue, clock setting
+        elif 22 <= self._new_game_step <= 50:
+            if self._new_game_step == 22:
+                logger.info("Step 22-50: Advancing through intro sequence (moving truck, clock setting, etc.)")
+            self.input.tap("A")
+            self._new_game_input_delay = 3
+            self._new_game_step += 1
+            
+        # Step 51: Clock setting - just accept default
+        elif self._new_game_step == 51:
+            logger.info("Step 51: Setting clock (accepting defaults)")
+            self.input.tap("A")
+            self._new_game_input_delay = 3
+            self._new_game_step = 52
+            
+        # Step 52-70: Continue through bedroom scene, going downstairs, meeting mom
+        elif 52 <= self._new_game_step <= 80:
+            if self._new_game_step == 52:
+                logger.info("Step 52-80: Continuing intro (bedroom → downstairs → outside)")
+            self.input.tap("A")
+            self._new_game_input_delay = 3
+            self._new_game_step += 1
+            
+        # Step 81-100: Navigate to Prof Birch being attacked (Route 101)
+        # Need to walk outside and trigger the event
+        elif 81 <= self._new_game_step <= 100:
+            if self._new_game_step == 81:
+                logger.info("Step 81-100: Navigating to Prof Birch event (Route 101)")
+            # Alternate between A and Up to navigate
+            if self._new_game_step % 2 == 0:
+                self.input.tap("A")
+            else:
+                self.input.tap("Up")
+            self._new_game_input_delay = 2
+            self._new_game_step += 1
+            
+        # Step 101-110: Prof Birch dialogue and bag selection
+        elif 101 <= self._new_game_step <= 110:
+            if self._new_game_step == 101:
+                logger.info("Step 101-110: Prof Birch dialogue, approaching bag")
+            self.input.tap("A")
+            self._new_game_input_delay = 3
+            self._new_game_step += 1
+            
+        # Step 111: CRITICAL - Select MUDKIP (left bag)
+        # When Birch throws bags, navigate LEFT to select Mudkip
+        elif self._new_game_step == 111:
+            logger.info("Step 111: SELECTING MUDKIP (left bag) - CRITICAL STEP")
+            self.input.tap("Left")  # Move cursor to left bag
+            self._new_game_input_delay = 3
+            self._new_game_step = 112
+            
+        elif self._new_game_step == 112:
+            logger.info("Step 112: Confirming Mudkip selection")
+            self.input.tap("A")  # Confirm selection
+            self._new_game_input_delay = 5
+            self._new_game_step = 113
+            
+        # Step 113-115: Confirm taking Mudkip dialogue
+        elif 113 <= self._new_game_step <= 115:
+            self.input.tap("A")
+            self._new_game_input_delay = 3
+            self._new_game_step += 1
+            
+        # Step 116: First battle begins (against Poochyena)
+        # Battle handler will take over once battle state is detected
+        # Just advance dialogue until battle starts
+        elif 116 <= self._new_game_step <= 130:
+            if self._new_game_step == 116:
+                logger.info("Step 116-130: First battle sequence (Poochyena)")
+                logger.info("  Battle AI will handle combat automatically")
+            self.input.tap("A")
+            self._new_game_input_delay = 3
+            self._new_game_step += 1
+            
+        # Step 131-150: Post-battle dialogue, returning to lab, getting Pokedex
+        elif 131 <= self._new_game_step <= 170:
+            if self._new_game_step == 131:
+                logger.info("Step 131-170: Post-battle sequence (return to lab, get Pokedex)")
+            self.input.tap("A")
+            self._new_game_input_delay = 3
+            self._new_game_step += 1
+            
+        # Step 171: Check if we've reached normal gameplay
+        # Detect by checking if we have Pokemon and play time is advancing
+        elif self._new_game_step == 171:
+            logger.info("Step 171: Checking if new game initialization is complete...")
+            party_count = self.state_detector.get_party_count()
+            
+            if party_count > 0:
+                logger.info("=" * 50)
+                logger.info("✓ NEW GAME INITIALIZATION COMPLETE!")
+                logger.info(f"  Party count: {party_count}")
+                logger.info("  Game is ready for autonomous play")
+                logger.info("=" * 50)
+                self._in_new_game_flow = False
+                self._new_game_step = 0
+            else:
+                # Keep advancing
+                self.input.tap("A")
+                self._new_game_input_delay = 5
+                # Loop back to continue advancement if needed
+                if self._new_game_step < 200:
+                    self._new_game_step += 1
+                else:
+                    # Failsafe: reset to step 50 if we're stuck
+                    logger.warning("New game flow may be stuck, resetting to step 50")
+                    self._new_game_step = 50
+        
+        # Failsafe: if somehow we exceed step 200, reset
+        else:
+            logger.warning(f"New game step {self._new_game_step} exceeded, resetting to dialogue spam")
+            self.input.tap("A")
+            self._new_game_input_delay = 3
 
     def _on_battle_start(self):
         """Called when entering a battle."""

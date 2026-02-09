@@ -254,6 +254,22 @@ class PokemonGen3StateDetector:
             Current PokemonGen3State
         """
         try:
+            # Check for title screen first (before pointer validation)
+            # Title screen has game state byte = 0xFF at 0x0300500C
+            try:
+                game_state_byte = self.client.read8(0x0300500C)
+                if game_state_byte == 0xFF:
+                    # Title screen detected
+                    if self._last_state != PokemonGen3State.TITLE_SCREEN:
+                        logger.info(f"State: {self._last_state.name} -> TITLE_SCREEN")
+                        self._state_changed = True
+                        self._last_state = PokemonGen3State.TITLE_SCREEN
+                    else:
+                        self._state_changed = False
+                    return PokemonGen3State.TITLE_SCREEN
+            except Exception:
+                pass  # If read fails, continue with normal detection
+            
             # Refresh pointers first
             if not self.refresh_pointers():
                 return PokemonGen3State.UNKNOWN
