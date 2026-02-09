@@ -85,7 +85,6 @@ class EmeraldAI:
         
         # Settings configuration (one-time setup)
         self._settings_configured = False
-        self.configuring_settings = False  # Flag to pause main loop during menu navigation
 
     def _set_strategy(self, strategy: str):
         strategy_map = {
@@ -138,10 +137,6 @@ class EmeraldAI:
     def tick(self):
         """Execute one game tick."""
         self._ticks_total += 1
-        
-        # Skip all processing if settings configuration is in progress
-        if self.configuring_settings:
-            return
         
         # Detect current state
         state = self.state_detector.detect()
@@ -310,142 +305,85 @@ class EmeraldAI:
         """Handle dialogue/text boxes - press A to advance."""
         self.input.tap("A")
 
-    def _configure_game_settings(self, retry_attempt: int = 0):
+    def _configure_game_settings(self):
         """
-        One-time configuration of game settings to optimal values.
+        Configure game settings via direct memory write.
         
-        This executes a fixed sequence to:
-        1. Open Start menu
-        2. Navigate to Options
-        3. Set Text Speed to Fast
-        4. Set Battle Scene to Off
-        5. Set Battle Style to Set
-        6. Exit back to overworld
+        Writes optimal settings to Save Block 2 options byte:
+        - Text Speed: Fast (2)
+        - Battle Scene: Off (1)
+        - Battle Style: Set (1)
         
-        Called once per session when settings are detected as non-optimal.
-        Includes retry logic and extended delays for BizHawk IPC reliability.
+        Combined value: 0x4A (74 decimal)
+        - Bits 0-2: Text speed = 2
+        - Bits 3-5: Battle animations = 1 (Off), shifted << 3
+        - Bits 6-7: Battle style = 1 (Set), shifted << 6
         
-        Args:
-            retry_attempt: Current retry attempt number (0-indexed)
+        Returns True on success, False on failure (game continues either way).
         """
-        max_retries = 3
-        
-        # Pause main game loop to prevent IPC race conditions
-        self.configuring_settings = True
-        
         logger.info("=" * 50)
-        logger.info(f"CONFIGURING GAME SETTINGS (Attempt {retry_attempt + 1}/{max_retries + 1})")
+        logger.info("CONFIGURING GAME SETTINGS (Direct Memory Write)")
         logger.info("=" * 50)
         
-        # Read initial settings
-        initial = self.state_detector.read_options()
-        logger.info(f"Initial: Text={initial['text_speed']}, "
-                   f"Scene={initial['battle_scene']}, Style={initial['battle_style']} "
-                   f"(raw=0x{initial['raw']:02X})")
-        
-        # Open Start menu
-        logger.info("[1/6] Opening Start menu...")
-        self.input.hold("Start", frames=8)  # Hold for ~8 frames for reliability
-        time.sleep(2.0)  # Increased delay for menu to fully open
-        
-        # Navigate to Options (6 downs from top in Emerald start menu)
-        logger.info("[2/6] Navigating to Options...")
-        for i in range(6):
-            self.input.tap("Down")
-            time.sleep(0.2)  # Increased delay between menu navigations
-        time.sleep(1.0)  # Extra delay before selecting
-        
-        # Select Options
-        logger.info("[3/6] Opening Options menu...")
-        self.input.hold("A", frames=8)
-        time.sleep(2.5)  # Increased delay for Options menu to open
-        
-        # Now in Options menu - configure settings
-        # Default cursor position is on first option (Text Speed)
-        
-        # 1. Set Text Speed to Fast (value 2)
-        logger.info("[4/6] Setting Text Speed to Fast...")
-        # Press Up a few times to ensure we're at Text Speed
-        for i in range(3):
-            self.input.tap("Up")
-            time.sleep(0.15)
-        time.sleep(0.5)
-        
-        # Press Right to cycle: Slow(0) -> Mid(1) -> Fast(2)
-        # Press Right 3 times to guarantee Fast regardless of starting position
-        for i in range(3):
-            self.input.tap("Right")
-            time.sleep(0.4)  # Increased delay to ensure game registers each press
-        time.sleep(1.0)
-        
-        # 2. Set Battle Scene to Off (value 1)
-        logger.info("[5/6] Setting Battle Scene to Off...")
-        self.input.tap("Down")  # Move to Battle Scene
-        time.sleep(0.5)
-        
-        # Read current value to determine toggle direction
-        # For reliability, just press Right twice to cycle through both states
-        for i in range(2):
-            self.input.tap("Right")
-            time.sleep(0.4)
-        time.sleep(1.0)
-        
-        # 3. Set Battle Style to Set (value 1)
-        logger.info("[6/6] Setting Battle Style to Set...")
-        self.input.tap("Down")  # Move to Battle Style
-        time.sleep(0.5)
-        
-        # Press Right twice to cycle through both states
-        for i in range(2):
-            self.input.tap("Right")
-            time.sleep(0.4)
-        time.sleep(1.0)
-        
-        # Exit Options menu
-        logger.info("Exiting Options menu...")
-        self.input.hold("B", frames=8)
-        time.sleep(2.0)  # Wait for menu to close
-        
-        # Press B again to close Start menu if still open
-        self.input.tap("B")
-        time.sleep(1.5)
-        
-        # CRITICAL: Wait for game to commit settings to Save Block 2 in memory
-        logger.info("Waiting for game to commit settings to memory...")
-        time.sleep(4.0)  # Extended delay before verification
-        
-        # Verify settings were applied
-        logger.info("Verifying settings...")
-        final = self.state_detector.read_options()
-        logger.info(f"Final: Text={final['text_speed']}, "
-                   f"Scene={final['battle_scene']}, Style={final['battle_style']} "
-                   f"(raw=0x{final['raw']:02X})")
-        
-        if self.state_detector.verify_optimal_settings():
-            logger.info("✓ Settings configured successfully!")
-            logger.info("=" * 50)
-            self._settings_configured = True
-            self.configuring_settings = False  # Resume main game loop
-            return True
-        else:
-            logger.warning(f"⚠ Settings verification failed!")
-            logger.warning(f"  Expected: Text=2, Scene=1, Style=1")
-            logger.warning(f"  Got: Text={final['text_speed']}, "
-                         f"Scene={final['battle_scene']}, Style={final['battle_style']}")
-            
-            # Retry logic
-            if retry_attempt < max_retries:
-                logger.warning(f"Retrying configuration (attempt {retry_attempt + 2}/{max_retries + 1})...")
-                time.sleep(2.0)  # Brief pause before retry
-                return self._configure_game_settings(retry_attempt + 1)
-            else:
-                logger.error(f"⚠ Settings configuration failed after {max_retries + 1} attempts!")
-                logger.error("  Game may not respond properly to IPC timing.")
-                logger.error("  Continuing with non-optimal settings...")
-                logger.info("=" * 50)
-                self._settings_configured = True  # Mark as attempted to avoid infinite loop
-                self.configuring_settings = False  # Resume main game loop
+        try:
+            # Read Save Block 2 pointer
+            sb2_ptr_result = self.client.read_memory(0x03005D90, 4)
+            if not sb2_ptr_result or len(sb2_ptr_result) < 4:
+                logger.error("Failed to read Save Block 2 pointer")
                 return False
+            
+            # Convert little-endian bytes to address
+            sb2_address = int.from_bytes(sb2_ptr_result, byteorder='little')
+            logger.info(f"Save Block 2 address: 0x{sb2_address:08X}")
+            
+            # Calculate options address (SB2 + 0x13)
+            options_address = sb2_address + 0x13
+            logger.info(f"Options address: 0x{options_address:08X}")
+            
+            # Read current value
+            current = self.client.read_memory(options_address, 1)
+            if current:
+                logger.info(f"Current options byte: 0x{current[0]:02X}")
+            
+            # Write optimal settings byte: 0x4A
+            # Bits 0-2: Text speed = 2 (Fast)
+            # Bits 3-5: Battle animations = 1 (Off), shifted << 3 = 0x08
+            # Bits 6-7: Battle style = 1 (Set), shifted << 6 = 0x40
+            # Total: 0x02 | 0x08 | 0x40 = 0x4A (74 decimal)
+            optimal_value = 0x4A
+            success = self.client.write_memory(options_address, [optimal_value])
+            
+            if not success:
+                logger.error("WRITE8 command failed")
+                return False
+            
+            logger.info(f"Wrote optimal settings: 0x{optimal_value:02X}")
+            
+            # Allow game time to process the write
+            time.sleep(0.5)
+            
+            # Verify the write
+            verify = self.client.read_memory(options_address, 1)
+            if not verify or len(verify) < 1:
+                logger.error("Failed to verify settings write")
+                return False
+            
+            if verify[0] == optimal_value:
+                logger.info(f"✓ Settings configured successfully! (verified: 0x{verify[0]:02X})")
+                logger.info("  Text Speed: Fast | Battle Scene: Off | Battle Style: Set")
+                logger.info("=" * 50)
+                return True
+            else:
+                logger.error(f"⚠ Verification failed: expected 0x{optimal_value:02X}, got 0x{verify[0]:02X}")
+                logger.error("  Continuing with current settings (game is still playable)")
+                logger.info("=" * 50)
+                return False
+                
+        except Exception as e:
+            logger.error(f"Exception during settings configuration: {e}")
+            logger.error("  Continuing with current settings (game is still playable)")
+            logger.info("=" * 50)
+            return False
 
     def _handle_overworld(self):
         """
@@ -462,12 +400,11 @@ class EmeraldAI:
         # Check if we need to configure settings (only once per session, early in overworld)
         if not self._settings_configured:
             if not self.state_detector.verify_optimal_settings():
-                # Settings not optimal - run configuration sequence
+                # Settings not optimal - write directly to memory
                 self._configure_game_settings()
-                return  # Skip this tick, settings config took time
             else:
                 logger.info("✓ Settings already optimal!")
-                self._settings_configured = True
+            self._settings_configured = True  # Mark as attempted regardless of result
         
         # Get current position
         pos = self.state_detector.get_player_position()
