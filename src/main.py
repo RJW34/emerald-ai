@@ -85,6 +85,7 @@ class EmeraldAI:
         
         # Settings configuration (one-time setup)
         self._settings_configured = False
+        self.configuring_settings = False  # Flag to pause main loop during menu navigation
 
     def _set_strategy(self, strategy: str):
         strategy_map = {
@@ -137,6 +138,10 @@ class EmeraldAI:
     def tick(self):
         """Execute one game tick."""
         self._ticks_total += 1
+        
+        # Skip all processing if settings configuration is in progress
+        if self.configuring_settings:
+            return
         
         # Detect current state
         state = self.state_detector.detect()
@@ -325,6 +330,9 @@ class EmeraldAI:
         """
         max_retries = 3
         
+        # Pause main game loop to prevent IPC race conditions
+        self.configuring_settings = True
+        
         logger.info("=" * 50)
         logger.info(f"CONFIGURING GAME SETTINGS (Attempt {retry_attempt + 1}/{max_retries + 1})")
         logger.info("=" * 50)
@@ -417,6 +425,7 @@ class EmeraldAI:
             logger.info("✓ Settings configured successfully!")
             logger.info("=" * 50)
             self._settings_configured = True
+            self.configuring_settings = False  # Resume main game loop
             return True
         else:
             logger.warning(f"⚠ Settings verification failed!")
@@ -435,6 +444,7 @@ class EmeraldAI:
                 logger.error("  Continuing with non-optimal settings...")
                 logger.info("=" * 50)
                 self._settings_configured = True  # Mark as attempted to avoid infinite loop
+                self.configuring_settings = False  # Resume main game loop
                 return False
 
     def _handle_overworld(self):
