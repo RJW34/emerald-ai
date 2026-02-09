@@ -16,6 +16,9 @@ Commands:
     READ16 <addr>           - Read 2 bytes (little-endian)
     READ32 <addr>           - Read 4 bytes (little-endian)
     READRANGE <addr> <len>  - Read byte range (returns hex)
+    WRITE8 <addr> <value>   - Write 1 byte to memory (0-255)
+    WRITE16 <addr> <value>  - Write 2 bytes (little-endian, 0-65535)
+    WRITE32 <addr> <value>  - Write 4 bytes (little-endian, 0-4294967295)
     TAP <button>            - Tap a button
     HOLD <button> <frames>  - Hold button for N frames
     SCREENSHOT <path>       - Save screenshot to file
@@ -131,6 +134,21 @@ local function domain_read_u32(addr)
     return memory.read_u32_le(local_addr, domain)
 end
 
+local function domain_write_u8(addr, value)
+    local domain, local_addr = resolve_address(addr)
+    memory.write_u8(local_addr, value, domain)
+end
+
+local function domain_write_u16(addr, value)
+    local domain, local_addr = resolve_address(addr)
+    memory.write_u16_le(local_addr, value, domain)
+end
+
+local function domain_write_u32(addr, value)
+    local domain, local_addr = resolve_address(addr)
+    memory.write_u32_le(local_addr, value, domain)
+end
+
 local function handle_command(cmd)
     cmd = cmd:match("^%s*(.-)%s*$")  -- Trim whitespace
 
@@ -167,6 +185,36 @@ local function handle_command(cmd)
         if not addr then return "ERROR Invalid address" end
         local value = domain_read_u32(addr)
         return "OK " .. value
+
+    -- WRITE8 - Write single byte
+    elseif command == "WRITE8" then
+        local addr = tonumber(parts[2])
+        local value = tonumber(parts[3])
+        if not addr then return "ERROR Invalid address" end
+        if not value then return "ERROR Invalid value" end
+        if value < 0 or value > 255 then return "ERROR Value out of range (0-255)" end
+        domain_write_u8(addr, value)
+        return "OK"
+
+    -- WRITE16 - Write 2 bytes (little-endian)
+    elseif command == "WRITE16" then
+        local addr = tonumber(parts[2])
+        local value = tonumber(parts[3])
+        if not addr then return "ERROR Invalid address" end
+        if not value then return "ERROR Invalid value" end
+        if value < 0 or value > 65535 then return "ERROR Value out of range (0-65535)" end
+        domain_write_u16(addr, value)
+        return "OK"
+
+    -- WRITE32 - Write 4 bytes (little-endian)
+    elseif command == "WRITE32" then
+        local addr = tonumber(parts[2])
+        local value = tonumber(parts[3])
+        if not addr then return "ERROR Invalid address" end
+        if not value then return "ERROR Invalid value" end
+        if value < 0 or value > 4294967295 then return "ERROR Value out of range (0-4294967295)" end
+        domain_write_u32(addr, value)
+        return "OK"
 
     -- READRANGE - Read byte range
     elseif command == "READRANGE" then
