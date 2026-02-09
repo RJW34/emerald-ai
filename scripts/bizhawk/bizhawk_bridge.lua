@@ -105,6 +105,32 @@ local function parse_command(cmd)
 end
 
 -- Handle incoming command
+-- Resolve GBA address to BizHawk domain + local offset
+local function resolve_address(addr)
+    if addr >= 0x02000000 and addr <= 0x0203FFFF then
+        return "EWRAM", addr - 0x02000000
+    elseif addr >= 0x03000000 and addr <= 0x03007FFF then
+        return "IWRAM", addr - 0x03000000
+    else
+        return "System Bus", addr
+    end
+end
+
+local function domain_read_u8(addr)
+    local domain, local_addr = resolve_address(addr)
+    return memory.read_u8(local_addr, domain)
+end
+
+local function domain_read_u16(addr)
+    local domain, local_addr = resolve_address(addr)
+    return memory.read_u16_le(local_addr, domain)
+end
+
+local function domain_read_u32(addr)
+    local domain, local_addr = resolve_address(addr)
+    return memory.read_u32_le(local_addr, domain)
+end
+
 local function handle_command(cmd)
     cmd = cmd:match("^%s*(.-)%s*$")  -- Trim whitespace
 
@@ -125,21 +151,21 @@ local function handle_command(cmd)
     elseif command == "READ8" then
         local addr = tonumber(parts[2])
         if not addr then return "ERROR Invalid address" end
-        local value = memory.read_u8(addr)
+        local value = domain_read_u8(addr)
         return "OK " .. value
 
     -- READ16 - Read 2 bytes
     elseif command == "READ16" then
         local addr = tonumber(parts[2])
         if not addr then return "ERROR Invalid address" end
-        local value = memory.read_u16_le(addr)
+        local value = domain_read_u16(addr)
         return "OK " .. value
 
     -- READ32 - Read 4 bytes
     elseif command == "READ32" then
         local addr = tonumber(parts[2])
         if not addr then return "ERROR Invalid address" end
-        local value = memory.read_u32_le(addr)
+        local value = domain_read_u32(addr)
         return "OK " .. value
 
     -- READRANGE - Read byte range
@@ -149,7 +175,7 @@ local function handle_command(cmd)
         if not addr or not length then return "ERROR Invalid address or length" end
         local hex = ""
         for i = 0, length - 1 do
-            hex = hex .. string.format("%02X", memory.read_u8(addr + i))
+            hex = hex .. string.format("%02X", domain_read_u8(addr + i))
         end
         return "OK " .. hex
 
