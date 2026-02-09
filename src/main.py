@@ -305,7 +305,7 @@ class EmeraldAI:
         """Handle dialogue/text boxes - press A to advance."""
         self.input.tap("A")
 
-    def _configure_game_settings(self):
+    def _configure_game_settings(self, retry_attempt: int = 0):
         """
         One-time configuration of game settings to optimal values.
         
@@ -318,77 +318,124 @@ class EmeraldAI:
         6. Exit back to overworld
         
         Called once per session when settings are detected as non-optimal.
+        Includes retry logic and extended delays for BizHawk IPC reliability.
+        
+        Args:
+            retry_attempt: Current retry attempt number (0-indexed)
         """
+        max_retries = 3
+        
         logger.info("=" * 50)
-        logger.info("CONFIGURING GAME SETTINGS")
+        logger.info(f"CONFIGURING GAME SETTINGS (Attempt {retry_attempt + 1}/{max_retries + 1})")
         logger.info("=" * 50)
         
         # Read initial settings
         initial = self.state_detector.read_options()
         logger.info(f"Initial: Text={initial['text_speed']}, "
-                   f"Scene={initial['battle_scene']}, Style={initial['battle_style']}")
+                   f"Scene={initial['battle_scene']}, Style={initial['battle_style']} "
+                   f"(raw=0x{initial['raw']:02X})")
         
         # Open Start menu
-        logger.info("Opening Start menu...")
-        self.input.tap("Start")
-        time.sleep(0.4)
+        logger.info("[1/6] Opening Start menu...")
+        self.input.hold("Start", frames=8)  # Hold for ~8 frames for reliability
+        time.sleep(2.0)  # Increased delay for menu to fully open
         
         # Navigate to Options (6 downs from top in Emerald start menu)
-        logger.info("Navigating to Options...")
-        self.input.press_sequence(["Down"] * 6, delay=0.12)
-        time.sleep(0.3)
+        logger.info("[2/6] Navigating to Options...")
+        for i in range(6):
+            self.input.tap("Down")
+            time.sleep(0.2)  # Increased delay between menu navigations
+        time.sleep(1.0)  # Extra delay before selecting
         
         # Select Options
-        self.input.tap("A")
-        time.sleep(0.5)
+        logger.info("[3/6] Opening Options menu...")
+        self.input.hold("A", frames=8)
+        time.sleep(2.5)  # Increased delay for Options menu to open
         
         # Now in Options menu - configure settings
         # Default cursor position is on first option (Text Speed)
         
         # 1. Set Text Speed to Fast (value 2)
-        logger.info("Setting Text Speed to Fast...")
+        logger.info("[4/6] Setting Text Speed to Fast...")
         # Press Up a few times to ensure we're at Text Speed
-        self.input.press_sequence(["Up"] * 3, delay=0.1)
-        time.sleep(0.2)
+        for i in range(3):
+            self.input.tap("Up")
+            time.sleep(0.15)
+        time.sleep(0.5)
+        
         # Press Right to cycle: Slow(0) -> Mid(1) -> Fast(2)
-        # Pressing Right 2 times will get to Fast from any position
-        self.input.press_sequence(["Right", "Right"], delay=0.25)
-        time.sleep(0.3)
+        # Press Right 3 times to guarantee Fast regardless of starting position
+        for i in range(3):
+            self.input.tap("Right")
+            time.sleep(0.4)  # Increased delay to ensure game registers each press
+        time.sleep(1.0)
         
         # 2. Set Battle Scene to Off (value 1)
-        logger.info("Setting Battle Scene to Off...")
+        logger.info("[5/6] Setting Battle Scene to Off...")
         self.input.tap("Down")  # Move to Battle Scene
-        time.sleep(0.2)
-        # Toggle: On(0) <-> Off(1). Press Right once to ensure Off.
-        # If already Off, this will toggle to On then back, so press Right once
-        self.input.tap("Right")
-        time.sleep(0.3)
+        time.sleep(0.5)
+        
+        # Read current value to determine toggle direction
+        # For reliability, just press Right twice to cycle through both states
+        for i in range(2):
+            self.input.tap("Right")
+            time.sleep(0.4)
+        time.sleep(1.0)
         
         # 3. Set Battle Style to Set (value 1)
-        logger.info("Setting Battle Style to Set...")
+        logger.info("[6/6] Setting Battle Style to Set...")
         self.input.tap("Down")  # Move to Battle Style
-        time.sleep(0.2)
-        # Toggle: Switch(0) <-> Set(1). Press Right once.
-        self.input.tap("Right")
-        time.sleep(0.3)
+        time.sleep(0.5)
+        
+        # Press Right twice to cycle through both states
+        for i in range(2):
+            self.input.tap("Right")
+            time.sleep(0.4)
+        time.sleep(1.0)
         
         # Exit Options menu
         logger.info("Exiting Options menu...")
+        self.input.hold("B", frames=8)
+        time.sleep(2.0)  # Wait for menu to close
+        
+        # Press B again to close Start menu if still open
         self.input.tap("B")
-        time.sleep(0.5)
+        time.sleep(1.5)
+        
+        # CRITICAL: Wait for game to commit settings to Save Block 2 in memory
+        logger.info("Waiting for game to commit settings to memory...")
+        time.sleep(4.0)  # Extended delay before verification
         
         # Verify settings were applied
+        logger.info("Verifying settings...")
         final = self.state_detector.read_options()
         logger.info(f"Final: Text={final['text_speed']}, "
-                   f"Scene={final['battle_scene']}, Style={final['battle_style']}")
+                   f"Scene={final['battle_scene']}, Style={final['battle_style']} "
+                   f"(raw=0x{final['raw']:02X})")
         
         if self.state_detector.verify_optimal_settings():
             logger.info("✓ Settings configured successfully!")
+            logger.info("=" * 50)
+            self._settings_configured = True
+            return True
         else:
-            logger.warning("⚠ Settings may not have applied correctly - will retry later")
-        
-        logger.info("=" * 50)
-        self._settings_configured = True
+            logger.warning(f"⚠ Settings verification failed!")
+            logger.warning(f"  Expected: Text=2, Scene=1, Style=1")
+            logger.warning(f"  Got: Text={final['text_speed']}, "
+                         f"Scene={final['battle_scene']}, Style={final['battle_style']}")
+            
+            # Retry logic
+            if retry_attempt < max_retries:
+                logger.warning(f"Retrying configuration (attempt {retry_attempt + 2}/{max_retries + 1})...")
+                time.sleep(2.0)  # Brief pause before retry
+                return self._configure_game_settings(retry_attempt + 1)
+            else:
+                logger.error(f"⚠ Settings configuration failed after {max_retries + 1} attempts!")
+                logger.error("  Game may not respond properly to IPC timing.")
+                logger.error("  Continuing with non-optimal settings...")
+                logger.info("=" * 50)
+                self._settings_configured = True  # Mark as attempted to avoid infinite loop
+                return False
 
     def _handle_overworld(self):
         """
