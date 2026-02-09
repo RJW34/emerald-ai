@@ -82,6 +82,9 @@ class EmeraldAI:
         self._battles_won = 0
         self._battles_fled = 0
         self._ticks_total = 0
+        
+        # Settings configuration (one-time setup)
+        self._settings_configured = False
 
     def _set_strategy(self, strategy: str):
         strategy_map = {
@@ -302,6 +305,91 @@ class EmeraldAI:
         """Handle dialogue/text boxes - press A to advance."""
         self.input.tap("A")
 
+    def _configure_game_settings(self):
+        """
+        One-time configuration of game settings to optimal values.
+        
+        This executes a fixed sequence to:
+        1. Open Start menu
+        2. Navigate to Options
+        3. Set Text Speed to Fast
+        4. Set Battle Scene to Off
+        5. Set Battle Style to Set
+        6. Exit back to overworld
+        
+        Called once per session when settings are detected as non-optimal.
+        """
+        logger.info("=" * 50)
+        logger.info("CONFIGURING GAME SETTINGS")
+        logger.info("=" * 50)
+        
+        # Read initial settings
+        initial = self.state_detector.read_options()
+        logger.info(f"Initial: Text={initial['text_speed']}, "
+                   f"Scene={initial['battle_scene']}, Style={initial['battle_style']}")
+        
+        # Open Start menu
+        logger.info("Opening Start menu...")
+        self.input.tap("Start")
+        time.sleep(0.4)
+        
+        # Navigate to Options (6 downs from top in Emerald start menu)
+        logger.info("Navigating to Options...")
+        self.input.press_sequence(["Down"] * 6, delay=0.12)
+        time.sleep(0.3)
+        
+        # Select Options
+        self.input.tap("A")
+        time.sleep(0.5)
+        
+        # Now in Options menu - configure settings
+        # Default cursor position is on first option (Text Speed)
+        
+        # 1. Set Text Speed to Fast (value 2)
+        logger.info("Setting Text Speed to Fast...")
+        # Press Up a few times to ensure we're at Text Speed
+        self.input.press_sequence(["Up"] * 3, delay=0.1)
+        time.sleep(0.2)
+        # Press Right to cycle: Slow(0) -> Mid(1) -> Fast(2)
+        # Pressing Right 2 times will get to Fast from any position
+        self.input.press_sequence(["Right", "Right"], delay=0.25)
+        time.sleep(0.3)
+        
+        # 2. Set Battle Scene to Off (value 1)
+        logger.info("Setting Battle Scene to Off...")
+        self.input.tap("Down")  # Move to Battle Scene
+        time.sleep(0.2)
+        # Toggle: On(0) <-> Off(1). Press Right once to ensure Off.
+        # If already Off, this will toggle to On then back, so press Right once
+        self.input.tap("Right")
+        time.sleep(0.3)
+        
+        # 3. Set Battle Style to Set (value 1)
+        logger.info("Setting Battle Style to Set...")
+        self.input.tap("Down")  # Move to Battle Style
+        time.sleep(0.2)
+        # Toggle: Switch(0) <-> Set(1). Press Right once.
+        self.input.tap("Right")
+        time.sleep(0.3)
+        
+        # Exit Options menu
+        logger.info("Exiting Options menu...")
+        self.input.tap("B")
+        time.sleep(0.5)
+        
+        # Verify settings were applied
+        final = self.state_detector.read_options()
+        logger.info(f"Final: Text={final['text_speed']}, "
+                   f"Scene={final['battle_scene']}, Style={final['battle_style']}")
+        
+        if self.state_detector.verify_optimal_settings():
+            logger.info("✓ Settings configured successfully!")
+        else:
+            logger.warning("⚠ Settings may not have applied correctly - will retry later")
+        
+        logger.info("=" * 50)
+        self._settings_configured = True
+
     def _handle_overworld(self):
         """
         Handle overworld navigation using random walk with direction persistence.
@@ -313,6 +401,16 @@ class EmeraldAI:
         - Walking randomly will trigger wild battles naturally
         """
         import random
+        
+        # Check if we need to configure settings (only once per session, early in overworld)
+        if not self._settings_configured:
+            if not self.state_detector.verify_optimal_settings():
+                # Settings not optimal - run configuration sequence
+                self._configure_game_settings()
+                return  # Skip this tick, settings config took time
+            else:
+                logger.info("✓ Settings already optimal!")
+                self._settings_configured = True
         
         # Get current position
         pos = self.state_detector.get_player_position()

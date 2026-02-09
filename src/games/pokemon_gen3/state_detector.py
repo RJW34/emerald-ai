@@ -64,7 +64,7 @@ class PokemonGen3State(Enum):
     MENU_BAG = auto()             # Bag menu
     MENU_POKEDEX = auto()         # Pokedex
     MENU_SAVE = auto()            # Save menu
-    MENU_OPTION = auto()          # Options menu
+    MENU_OPTIONS = auto()         # Options menu
     MENU_POKENAV = auto()         # PokeNav (RSE)
 
     # Other states
@@ -422,7 +422,7 @@ class PokemonGen3StateDetector:
             PokemonGen3State.MENU_BAG,
             PokemonGen3State.MENU_POKEDEX,
             PokemonGen3State.MENU_SAVE,
-            PokemonGen3State.MENU_OPTION,
+            PokemonGen3State.MENU_OPTIONS,
             PokemonGen3State.MENU_POKENAV,
         )
 
@@ -693,6 +693,71 @@ class PokemonGen3StateDetector:
         except Exception as e:
             logger.error(f"Unexpected error reading battle Pokemon {battler_index}: {e}")
             return None
+
+    # -------------------------------------------------------------------------
+    # Options/Settings Reading (Pointer-based)
+    # -------------------------------------------------------------------------
+
+    def read_options(self) -> dict[str, int]:
+        """
+        Read game options from Save Block 2.
+        
+        Options are stored as a bitfield at offset 0x13:
+        - Bits 0-2: Text Speed (0=Slow, 1=Mid, 2=Fast)
+        - Bit 3: Battle Scene (0=On, 1=Off)
+        - Bit 4: Battle Style (0=Switch, 1=Set)
+        - Bit 5: Sound (0=Mono, 1=Stereo)
+        
+        Returns:
+            Dictionary with option names and values
+        """
+        try:
+            options_byte = self._read_from_save_block_2(self.mem.OPTIONS_OFFSET, 1)
+            
+            return {
+                'text_speed': options_byte & 0x07,           # Bits 0-2
+                'battle_scene': (options_byte >> 3) & 0x01,  # Bit 3
+                'battle_style': (options_byte >> 4) & 0x01,  # Bit 4
+                'sound': (options_byte >> 5) & 0x01,         # Bit 5
+                'raw': options_byte,                         # Full byte for debugging
+            }
+        except Exception as e:
+            logger.warning(f"Failed to read options: {e}")
+            return {
+                'text_speed': 0,
+                'battle_scene': 0,
+                'battle_style': 0,
+                'sound': 0,
+                'raw': 0,
+            }
+
+    def verify_optimal_settings(self) -> bool:
+        """
+        Check if game settings are configured optimally for AI play.
+        
+        Optimal settings:
+        - Text Speed: Fast (2)
+        - Battle Scene: Off (1)
+        - Battle Style: Set (1)
+        
+        Returns:
+            True if all settings are optimal
+        """
+        options = self.read_options()
+        
+        is_optimal = (
+            options['text_speed'] == 2 and      # Fast
+            options['battle_scene'] == 1 and    # Off
+            options['battle_style'] == 1        # Set
+        )
+        
+        if not is_optimal:
+            logger.info(f"Settings check: "
+                       f"Text={options['text_speed']} (want 2), "
+                       f"Scene={options['battle_scene']} (want 1), "
+                       f"Style={options['battle_style']} (want 1)")
+        
+        return is_optimal
 
     # -------------------------------------------------------------------------
     # Convenience Methods
