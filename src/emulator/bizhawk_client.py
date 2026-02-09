@@ -189,6 +189,11 @@ class BizHawkClient:
                 logger.error(f"Invalid hex data in response: {hex_data}")
         return bytes(length)
 
+    def write8(self, address: int, value: int) -> bool:
+        """Write a single byte to memory."""
+        response = self._send_command(f"WRITE8 {address} {value}")
+        return response is not None and response.startswith("OK")
+
     # -------------------------------------------------------------------------
     # Button Input Methods
     # -------------------------------------------------------------------------

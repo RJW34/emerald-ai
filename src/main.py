@@ -327,13 +327,11 @@ class EmeraldAI:
         
         try:
             # Read Save Block 2 pointer
-            sb2_ptr_result = self.client.read_memory(0x03005D90, 4)
-            if not sb2_ptr_result or len(sb2_ptr_result) < 4:
-                logger.error("Failed to read Save Block 2 pointer")
+            sb2_address = self.client.read32(0x03005D90)
+            if not sb2_address or not (0x02000000 <= sb2_address <= 0x0203FFFF):
+                logger.error(f"Invalid Save Block 2 pointer: {sb2_address}")
                 return False
             
-            # Convert little-endian bytes to address
-            sb2_address = int.from_bytes(sb2_ptr_result, byteorder='little')
             logger.info(f"Save Block 2 address: 0x{sb2_address:08X}")
             
             # Calculate options address (SB2 + 0x13)
@@ -341,9 +339,8 @@ class EmeraldAI:
             logger.info(f"Options address: 0x{options_address:08X}")
             
             # Read current value
-            current = self.client.read_memory(options_address, 1)
-            if current:
-                logger.info(f"Current options byte: 0x{current[0]:02X}")
+            current = self.client.read8(options_address)
+            logger.info(f"Current options byte: 0x{current:02X}")
             
             # Write optimal settings byte: 0x4A
             # Bits 0-2: Text speed = 2 (Fast)
@@ -351,7 +348,7 @@ class EmeraldAI:
             # Bits 6-7: Battle style = 1 (Set), shifted << 6 = 0x40
             # Total: 0x02 | 0x08 | 0x40 = 0x4A (74 decimal)
             optimal_value = 0x4A
-            success = self.client.write_memory(options_address, [optimal_value])
+            success = self.client.write8(options_address, optimal_value)
             
             if not success:
                 logger.error("WRITE8 command failed")
@@ -363,18 +360,15 @@ class EmeraldAI:
             time.sleep(0.5)
             
             # Verify the write
-            verify = self.client.read_memory(options_address, 1)
-            if not verify or len(verify) < 1:
-                logger.error("Failed to verify settings write")
-                return False
+            verify = self.client.read8(options_address)
             
-            if verify[0] == optimal_value:
-                logger.info(f"✓ Settings configured successfully! (verified: 0x{verify[0]:02X})")
+            if verify == optimal_value:
+                logger.info(f"✓ Settings configured successfully! (verified: 0x{verify:02X})")
                 logger.info("  Text Speed: Fast | Battle Scene: Off | Battle Style: Set")
                 logger.info("=" * 50)
                 return True
             else:
-                logger.error(f"⚠ Verification failed: expected 0x{optimal_value:02X}, got 0x{verify[0]:02X}")
+                logger.error(f"⚠ Verification failed: expected 0x{optimal_value:02X}, got 0x{verify:02X}")
                 logger.error("  Continuing with current settings (game is still playable)")
                 logger.info("=" * 50)
                 return False
