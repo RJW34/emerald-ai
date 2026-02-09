@@ -78,67 +78,78 @@ class BizHawkClient:
         except:
             return False
 
-    def _send_command(self, command: str) -> Optional[str]:
+    def _send_command(self, command: str, max_retries: int = 3) -> Optional[str]:
         """
-        Send a command to BizHawk and wait for response.
+        Send a command to BizHawk and wait for response with retry logic.
 
         Args:
             command: Command string to send
+            max_retries: Maximum number of retry attempts (default 3)
 
         Returns:
             Response string or None on error/timeout
         """
-        # Generate unique command ID
-        cmd_id = str(uuid.uuid4())[:8]
+        for retry_attempt in range(max_retries):
+            if retry_attempt > 0:
+                logger.warning(f"Retry {retry_attempt}/{max_retries - 1} for command: {command}")
+                time.sleep(0.05)  # 50ms delay between retries
+            
+            # Generate unique command ID
+            cmd_id = str(uuid.uuid4())[:8]
 
-        # Write command file with retry (Lua may have file open for reading)
-        written = False
-        for attempt in range(20):  # ~1s total retry window
-            try:
-                # Wait for Lua lock to clear
-                if self.lock_file.exists():
-                    time.sleep(self.poll_interval)
-                    continue
-                
-                with open(self.command_file, "w") as f:
-                    f.write(f"{cmd_id}:{command}")
-                written = True
-                break
-            except (PermissionError, OSError):
-                time.sleep(0.05)  # Brief pause before retry
-        
-        if not written:
-            logger.warning(f"Could not write command after retries: {command}")
-            return None
-
-        # Wait for response
-        start_time = time.time()
-        while time.time() - start_time < self.timeout:
-            try:
-                # Wait for lock to be released before reading
-                if self.lock_file.exists():
-                    time.sleep(self.poll_interval)
-                    continue
+            # Write command file with retry (Lua may have file open for reading)
+            written = False
+            for attempt in range(20):  # ~1s total retry window
+                try:
+                    # Wait for Lua lock to clear
+                    if self.lock_file.exists():
+                        time.sleep(self.poll_interval)
+                        continue
                     
-                if self.response_file.exists():
-                    with open(self.response_file, "r") as f:
-                        content = f.read().strip()
+                    with open(self.command_file, "w") as f:
+                        f.write(f"{cmd_id}:{command}")
+                    written = True
+                    break
+                except (PermissionError, OSError):
+                    time.sleep(0.05)  # Brief pause before retry
+            
+            if not written:
+                logger.warning(f"Could not write command after retries: {command}")
+                continue  # Try the whole command again
 
-                    # Check if this is our response
-                    if content.startswith(f"{cmd_id}:"):
-                        response = content[len(cmd_id) + 1:]
-                        # Clean up response file
-                        try:
-                            self.response_file.unlink()
-                        except:
-                            pass
-                        return response
-            except Exception as e:
-                logger.debug(f"Error reading response: {e}")
+            # Wait for response
+            start_time = time.time()
+            while time.time() - start_time < self.timeout:
+                try:
+                    # Wait for lock to be released before reading
+                    if self.lock_file.exists():
+                        time.sleep(self.poll_interval)
+                        continue
+                        
+                    if self.response_file.exists():
+                        with open(self.response_file, "r") as f:
+                            content = f.read().strip()
 
-            time.sleep(self.poll_interval)
+                        # Check if this is our response
+                        if content.startswith(f"{cmd_id}:"):
+                            response = content[len(cmd_id) + 1:]
+                            # Clean up response file
+                            try:
+                                self.response_file.unlink()
+                            except:
+                                pass
+                            return response
+                except Exception as e:
+                    logger.debug(f"Error reading response: {e}")
 
-        logger.warning(f"Timeout waiting for response to: {command}")
+                time.sleep(self.poll_interval)
+
+            # Timeout occurred, will retry if attempts remain
+            if retry_attempt < max_retries - 1:
+                logger.warning(f"Timeout waiting for response to: {command} (will retry)")
+            else:
+                logger.warning(f"Timeout waiting for response to: {command} (no retries left)")
+
         return None
 
     def _parse_response(self, response: Optional[str]) -> Optional[int]:

@@ -64,7 +64,7 @@ class EmeraldAI:
         )
         
         # Game loop state
-        self.tick_interval = 0.3
+        self.tick_interval = 0.5
         self.running = False
         self._battle_context = None
         self._ticks_in_state = 0

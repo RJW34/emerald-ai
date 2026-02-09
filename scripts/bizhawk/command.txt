@@ -1,1 +1,1 @@
-test5:FRAMECOUNT
+ss:SCREENSHOT C:/Users/Ryan/clawd/emerald_bizhawk.png
