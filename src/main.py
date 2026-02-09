@@ -255,20 +255,20 @@ class EmeraldAI:
                 logger.info("   Pressing Left 3x to select Mudkip (leftmost bag)")
                 # Press Left multiple times to ensure we're on Mudkip
                 self.input.tap("Left")
-                time.sleep(0.1)
-                self.input.tap("Left")
-                time.sleep(0.1)
-                self.input.tap("Left")
                 self._new_game_step = 1
             elif self._new_game_step == 1:
+                self.input.tap("Left")
+                self._new_game_step = 2
+            elif self._new_game_step == 2:
+                self.input.tap("Left")
+                self._new_game_step = 3
+            elif self._new_game_step == 3:
                 logger.info("   Confirming Mudkip selection with A")
                 self.input.tap("A")
-                time.sleep(0.2)
-                self._new_game_step = 2
+                self._new_game_step = 4
             else:
                 # After selecting, spam A to continue through dialogue
                 self.input.tap("A")
-                time.sleep(0.1)
         else:
             # Not on Route 101 yet or still in intro - spam A and Start to advance
             # Alternate between A and Start for maximum advancement
@@ -276,7 +276,6 @@ class EmeraldAI:
                 self.input.tap("A")
             else:
                 self.input.tap("Start")
-            time.sleep(0.05)
             
         # Log state periodically
         if self._ticks_in_state % 10 == 0:
