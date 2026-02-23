@@ -1,0 +1,9 @@
+#!/bin/bash
+cd /home/ryan/projects/emerald-ai
+source venv/bin/activate
+mkdir -p logs
+exec python -m src_v2.main --rom /home/ryan/roms/emerald.gba 2>&1 \
+  | grep -v '^GBA ' \
+  | grep -v 'avedata:' \
+  | grep -v '^$' \
+  >> logs/emerald_v2.log 2>&1

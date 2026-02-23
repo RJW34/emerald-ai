@@ -1,5 +1,5 @@
 {
-  "timestamp": 1770586535.6701427,
+  "timestamp": 1771760126.0781977,
   "badges": {
     "stone": false,
     "knuckle": false,
@@ -8,11 +8,11 @@
     "balance": false,
     "feather": false,
     "mind": false,
-    "rain": false
+    "rain": true
   },
   "story": {
     "has_starter": false,
-    "has_pokedex": false,
+    "has_pokedex": true,
     "has_pokenav": false,
     "clock_set": false,
     "elite_four_cleared": false,
@@ -20,9 +20,9 @@
     "groudon_caught": false,
     "kyogre_caught": false,
     "regirock_caught": false,
-    "regice_caught": false,
+    "regice_caught": true,
     "registeel_caught": false,
-    "latias_caught": false,
+    "latias_caught": true,
     "latios_caught": false
   },
   "pokedex": {

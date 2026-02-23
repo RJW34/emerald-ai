@@ -1,0 +1,13 @@
+#!/bin/bash
+pkill -f 'src_v2.main' 2>/dev/null || true
+sleep 1
+mkdir -p /home/ryan/projects/emerald-ai/logs
+cd /home/ryan/projects/emerald-ai
+source venv/bin/activate
+setsid python -m src_v2.main >> logs/emerald_v2.log 2>/dev/null < /dev/null &
+PID=$!
+echo $PID > logs/emerald_v2.pid
+echo "Started PID $PID"
+sleep 4
+echo "--- last log lines ---"
+tail -10 logs/emerald_v2.log

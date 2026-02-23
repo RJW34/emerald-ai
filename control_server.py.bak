@@ -1,0 +1,651 @@
+#!/usr/bin/env python3
+"""
+Emerald AI Control Server
+
+FastAPI server that provides screenshot capture, button input, Lua script
+management, and game state reading for the running mGBA-qt instance.
+
+All input goes through xdotool + X11 — NOT mgba-python (which creates
+its own embedded emulator and cannot control the live mGBA-qt process).
+
+Endpoints:
+  GET  /health      -> {"ok": true, "mgba_pid": N, "mgba_running": true}
+  GET  /screenshot   -> image/png of the mGBA window
+  POST /press        -> send button presses via xdotool
+  POST /lua          -> write a Lua script file for mGBA to load
+  GET  /state        -> full game state from process memory
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import struct
+import subprocess
+import time
+from pathlib import Path
+from typing import Optional
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import Response, JSONResponse
+from pydantic import BaseModel
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+log = logging.getLogger("control-server")
+
+app = FastAPI(title="Emerald AI Control Server", version="1.0.0")
+
+PROJECT_DIR = Path("/home/ryan/projects/emerald-ai")
+SCREENSHOT_PATH = "/tmp/emerald_frame.png"
+LUA_SCRIPT_PATH = PROJECT_DIR / "strategy.lua"
+
+XDOTOOL_ENV = {**os.environ, "DISPLAY": ":0"}
+
+# GBA frame duration in seconds (59.7275 Hz)
+GBA_FRAME_MS = 1000.0 / 59.7275  # ~16.74ms
+
+# mGBA default key mappings (GBA button -> X11 key name)
+# Source: mGBA defaults + existing mgba_xdotool_controller.py
+KEY_MAP = {
+    "A": "x",
+    "B": "z",
+    "Start": "Return",
+    "Select": "BackSpace",
+    "Up": "Up",
+    "Down": "Down",
+    "Left": "Left",
+    "Right": "Right",
+    "L": "a",
+    "R": "s",
+}
+# Also accept lowercase
+KEY_MAP.update({k.lower(): v for k, v in KEY_MAP.items()})
+
+
+def _find_mgba_window() -> Optional[int]:
+    """Find the mGBA window ID via xdotool."""
+    for search in [
+        ["xdotool", "search", "--name", "mGBA"],
+        ["xdotool", "search", "--class", "mgba-qt"],
+    ]:
+        try:
+            result = subprocess.run(
+                search, capture_output=True, text=True,
+                env=XDOTOOL_ENV, timeout=5,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return int(result.stdout.strip().splitlines()[0])
+        except Exception:
+            continue
+    return None
+
+
+def _find_mgba_pid() -> Optional[int]:
+    """Find mGBA process ID."""
+    try:
+        result = subprocess.run(
+            ["pgrep", "-x", "mgba-qt"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return int(result.stdout.strip().splitlines()[0])
+    except Exception:
+        pass
+    return None
+
+
+# ── Request models ──────────────────────────────────────────────────────────
+
+class PressRequest(BaseModel):
+    buttons: list[str]
+    frames: int = 5
+
+class LuaRequest(BaseModel):
+    script: str
+
+
+# ── Endpoints ───────────────────────────────────────────────────────────────
+
+@app.get("/health")
+async def health():
+    pid = _find_mgba_pid()
+    return {
+        "ok": pid is not None,
+        "mgba_pid": pid,
+        "mgba_running": pid is not None,
+    }
+
+
+@app.get("/screenshot")
+async def screenshot():
+    """Capture the mGBA window and return PNG bytes."""
+    # Try xwd + convert first (most reliable, captures by window name)
+    try:
+        proc = await asyncio.create_subprocess_shell(
+            f'DISPLAY=:0 xwd -name "mGBA" -silent | convert xwd:- png:{SCREENSHOT_PATH}',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+        if proc.returncode == 0 and os.path.exists(SCREENSHOT_PATH):
+            data = Path(SCREENSHOT_PATH).read_bytes()
+            if len(data) > 100:  # sanity check
+                return Response(content=data, media_type="image/png")
+        log.warning(f"xwd+convert failed (rc={proc.returncode}): {stderr.decode()[:200]}")
+    except Exception as e:
+        log.warning(f"xwd+convert exception: {e}")
+
+    # Fallback: import (ImageMagick) - captures by window name
+    try:
+        wid = _find_mgba_window()
+        if wid:
+            proc = await asyncio.create_subprocess_exec(
+                "import", "-window", str(wid), SCREENSHOT_PATH,
+                env=XDOTOOL_ENV,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+            if proc.returncode == 0 and os.path.exists(SCREENSHOT_PATH):
+                data = Path(SCREENSHOT_PATH).read_bytes()
+                if len(data) > 100:
+                    return Response(content=data, media_type="image/png")
+    except Exception as e:
+        log.warning(f"import fallback failed: {e}")
+
+    # Fallback: scrot focused window
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "scrot", "-u", SCREENSHOT_PATH,
+            env=XDOTOOL_ENV,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+        if proc.returncode == 0 and os.path.exists(SCREENSHOT_PATH):
+            data = Path(SCREENSHOT_PATH).read_bytes()
+            if len(data) > 100:
+                return Response(content=data, media_type="image/png")
+    except Exception as e:
+        log.warning(f"scrot fallback failed: {e}")
+
+    raise HTTPException(status_code=500, detail="All screenshot methods failed")
+
+
+@app.post("/press")
+async def press(req: PressRequest):
+    """Send button presses to mGBA via xdotool."""
+    wid = _find_mgba_window()
+    if wid is None:
+        raise HTTPException(status_code=503, detail="mGBA window not found")
+
+    # Validate and map buttons
+    x11_keys = []
+    for btn in req.buttons:
+        key = KEY_MAP.get(btn)
+        if key is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown button '{btn}'. Valid: {list(KEY_MAP.keys())}",
+            )
+        x11_keys.append(key)
+
+    # Send each key press
+    for key in x11_keys:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "xdotool", "key", "--window", str(wid), key,
+                env=XDOTOOL_ENV,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            await asyncio.wait_for(proc.communicate(), timeout=5)
+        except Exception as e:
+            log.error(f"xdotool key {key} failed: {e}")
+            raise HTTPException(status_code=500, detail=f"xdotool failed: {e}")
+
+    # Hold duration: frames * GBA frame time
+    hold_ms = req.frames * GBA_FRAME_MS
+    await asyncio.sleep(hold_ms / 1000.0)
+
+    return {"ok": True, "buttons": req.buttons, "frames": req.frames, "hold_ms": round(hold_ms, 1)}
+
+
+@app.post("/lua")
+async def lua(req: LuaRequest):
+    """Write a Lua script for mGBA to load."""
+    try:
+        LUA_SCRIPT_PATH.write_text(req.script)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to write Lua script: {e}")
+
+    return {
+        "ok": True,
+        "path": str(LUA_SCRIPT_PATH),
+        "note": "mGBA-qt must manually load/reload this script via Tools > Scripting > File > Load Script",
+    }
+
+
+# ── Game State (reuses logic from game_state_server.py) ────────────────────
+
+# Gen 3 character table
+GEN3_CHARS: dict[int, str] = {
+    0xBB: "A", 0xBC: "B", 0xBD: "C", 0xBE: "D", 0xBF: "E",
+    0xC0: "F", 0xC1: "G", 0xC2: "H", 0xC3: "I", 0xC4: "J",
+    0xC5: "K", 0xC6: "L", 0xC7: "M", 0xC8: "N", 0xC9: "O",
+    0xCA: "P", 0xCB: "Q", 0xCC: "R", 0xCD: "S", 0xCE: "T",
+    0xCF: "U", 0xD0: "V", 0xD1: "W", 0xD2: "X", 0xD3: "Y",
+    0xD4: "Z", 0xD5: "a", 0xD6: "b", 0xD7: "c", 0xD8: "d",
+    0xD9: "e", 0xDA: "f", 0xDB: "g", 0xDC: "h", 0xDD: "i",
+    0xDE: "j", 0xDF: "k", 0xE0: "l", 0xE1: "m", 0xE2: "n",
+    0xE3: "o", 0xE4: "p", 0xE5: "q", 0xE6: "r", 0xE7: "s",
+    0xE8: "t", 0xE9: "u", 0xEA: "v", 0xEB: "w", 0xEC: "x",
+    0xED: "y", 0xEE: "z", 0x00: " ",
+    0xA1: "0", 0xA2: "1", 0xA3: "2", 0xA4: "3", 0xA5: "4",
+    0xA6: "5", 0xA7: "6", 0xA8: "7", 0xA9: "8", 0xAA: "9",
+    0xAB: "!", 0xAC: "?", 0xAD: ".", 0xAE: "-", 0xB4: "'",
+}
+
+# Memory layout constants
+EWRAM_OFFSET = 0x00000
+IWRAM_OFFSET = 0x58000
+SAVE_BLOCK_1_PTR_OFF = 0x5D8C
+SAVE_BLOCK_2_PTR_OFF = 0x5D90
+POKEMON_STORAGE_PTR_OFF = 0x5D94
+CALLBACK1_OFF = 0x22C0
+CALLBACK2_OFF = 0x22C4
+
+SB1_PLAYER_X = 0x0
+SB1_PLAYER_Y = 0x2
+SB1_MAP_GROUP = 0x4
+SB1_MAP_NUM = 0x5
+SB1_PARTY_COUNT = 0x234
+SB1_PARTY_DATA = 0x238
+SB1_MONEY = 0x0490
+SB1_SECURITY_KEY = 0x0AF8
+SB1_EVENT_FLAGS = 0x1270
+
+SB2_PLAYER_NAME = 0x0
+SB2_PLAYER_GENDER = 0x8
+SB2_PLAY_TIME = 0xE
+
+BATTLE_TYPE_FLAGS_OFF = 0x22FEC
+PARTY_MON_SIZE = 100
+PKM_NICKNAME = 0x8
+PKM_LEVEL = 0x54
+PKM_HP = 0x56
+PKM_MAX_HP = 0x58
+
+BADGE_FLAGS = [0x807, 0x808, 0x809, 0x80A, 0x80B, 0x80C, 0x80D, 0x80E]
+BADGE_NAMES = ["Stone", "Knuckle", "Dynamo", "Heat", "Balance", "Feather", "Mind", "Rain"]
+
+MAP_NAMES: dict[tuple[int, int], str] = {
+    (0, 0): "Petalburg City", (0, 1): "Slateport City", (0, 2): "Mauville City",
+    (0, 3): "Rustboro City", (0, 4): "Fortree City", (0, 5): "Lilycove City",
+    (0, 6): "Mossdeep City", (0, 7): "Sootopolis City", (0, 8): "Ever Grande City",
+    (0, 9): "Littleroot Town", (0, 10): "Oldale Town", (0, 11): "Dewford Town",
+    (0, 12): "Lavaridge Town", (0, 13): "Fallarbor Town", (0, 14): "Verdanturf Town",
+    (0, 15): "Pacifidlog Town",
+    (0, 16): "Route 101", (0, 17): "Route 102", (0, 18): "Route 103",
+    (0, 19): "Route 104", (0, 20): "Route 105", (0, 21): "Route 106",
+    (0, 22): "Route 107", (0, 23): "Route 108", (0, 24): "Route 109",
+    (0, 25): "Route 110", (0, 26): "Route 111", (0, 27): "Route 112",
+    (0, 28): "Route 113", (0, 29): "Route 114", (0, 30): "Route 115",
+    (0, 31): "Route 116", (0, 32): "Route 117", (0, 33): "Route 118",
+    (0, 34): "Route 119", (0, 35): "Route 120", (0, 36): "Route 121",
+    (0, 37): "Route 122", (0, 38): "Route 123", (0, 39): "Route 124",
+    (0, 40): "Route 125", (0, 41): "Route 126", (0, 42): "Route 127",
+    (0, 43): "Route 128", (0, 44): "Route 129", (0, 45): "Route 130",
+    (0, 46): "Route 131", (0, 47): "Route 132", (0, 48): "Route 133",
+    (0, 49): "Route 134",
+    (24, 0): "Meteor Falls", (24, 2): "Rusturf Tunnel",
+    (24, 4): "Granite Cave 1F", (24, 7): "Petalburg Woods",
+    (24, 10): "Mt. Chimney", (24, 11): "Jagged Pass",
+    (24, 15): "Fiery Path", (24, 22): "Seafloor Cavern",
+    (24, 37): "Victory Road 1F", (24, 40): "Shoal Cave",
+    (24, 44): "New Mauville", (24, 48): "Sky Pillar 1F",
+    (25, 0): "Pokemon League",
+    (25, 1): "Elite Four - Sidney", (25, 2): "Elite Four - Phoebe",
+    (25, 3): "Elite Four - Glacia", (25, 4): "Elite Four - Drake",
+    (25, 5): "Champion - Wallace",
+    (26, 0): "Player's House 1F", (26, 1): "Player's House 2F",
+    (26, 2): "Rival's House", (26, 3): "Birch's Lab",
+}
+
+SPECIES_NAMES: dict[int, str] = {
+    1: "Bulbasaur", 2: "Ivysaur", 3: "Venusaur", 4: "Charmander",
+    5: "Charmeleon", 6: "Charizard", 7: "Squirtle", 8: "Wartortle",
+    9: "Blastoise", 25: "Pikachu", 26: "Raichu",
+    150: "Mewtwo", 151: "Mew",
+    252: "Treecko", 253: "Grovyle", 254: "Sceptile",
+    255: "Torchic", 256: "Combusken", 257: "Blaziken",
+    258: "Mudkip", 259: "Marshtomp", 260: "Swampert",
+    261: "Poochyena", 262: "Mightyena", 263: "Zigzagoon", 264: "Linoone",
+    265: "Wurmple", 266: "Silcoon", 267: "Beautifly",
+    268: "Cascoon", 269: "Dustox", 270: "Lotad", 271: "Lombre",
+    272: "Ludicolo", 273: "Seedot", 274: "Nuzleaf", 275: "Shiftry",
+    276: "Taillow", 277: "Swellow", 278: "Wingull", 279: "Pelipper",
+    280: "Ralts", 281: "Kirlia", 282: "Gardevoir",
+    285: "Shroomish", 286: "Breloom", 287: "Slakoth", 288: "Vigoroth",
+    289: "Slaking", 293: "Whismur", 294: "Loudred", 295: "Exploud",
+    296: "Makuhita", 297: "Hariyama", 300: "Skitty", 302: "Sableye",
+    303: "Mawile", 304: "Aron", 305: "Lairon", 306: "Aggron",
+    309: "Electrike", 310: "Manectric", 315: "Roselia",
+    318: "Carvanha", 319: "Sharpedo", 320: "Wailmer", 321: "Wailord",
+    322: "Numel", 323: "Camerupt", 324: "Torkoal",
+    328: "Trapinch", 329: "Vibrava", 330: "Flygon",
+    333: "Swablu", 334: "Altaria", 335: "Zangoose", 336: "Seviper",
+    339: "Barboach", 340: "Whiscash", 341: "Corphish", 342: "Crawdaunt",
+    343: "Baltoy", 344: "Claydol", 349: "Feebas", 350: "Milotic",
+    352: "Kecleon", 359: "Absol",
+    371: "Bagon", 372: "Shelgon", 373: "Salamence",
+    374: "Beldum", 375: "Metang", 376: "Metagross",
+    377: "Regirock", 378: "Regice", 379: "Registeel",
+    380: "Latias", 381: "Latios",
+    382: "Kyogre", 383: "Groudon", 384: "Rayquaza",
+    385: "Jirachi", 386: "Deoxys",
+    41: "Zubat", 42: "Golbat", 43: "Oddish",
+    63: "Abra", 64: "Kadabra", 65: "Alakazam",
+    66: "Machop", 67: "Machoke", 68: "Machamp",
+    72: "Tentacool", 73: "Tentacruel",
+    74: "Geodude", 75: "Graveler", 76: "Golem",
+    81: "Magnemite", 82: "Magneton",
+    129: "Magikarp", 130: "Gyarados", 169: "Crobat",
+    183: "Marill", 184: "Azumarill",
+}
+
+
+def decode_gen3(data: bytes) -> str:
+    out: list[str] = []
+    for b in data:
+        if b == 0xFF:
+            break
+        out.append(GEN3_CHARS.get(b, ""))
+    return "".join(out).strip()
+
+
+class MgbaMemoryReader:
+    """Reads GBA memory from a running mGBA process via /proc/PID/mem."""
+
+    def __init__(self):
+        self.pid: Optional[int] = None
+        self.gba_block_base: Optional[int] = None
+        self._last_scan = 0.0
+        self._scan_interval = 5.0
+
+    @property
+    def ewram_host(self) -> Optional[int]:
+        return self.gba_block_base + EWRAM_OFFSET if self.gba_block_base else None
+
+    @property
+    def iwram_host(self) -> Optional[int]:
+        return self.gba_block_base + IWRAM_OFFSET if self.gba_block_base else None
+
+    def _raw_read(self, pid: int, addr: int, length: int) -> bytes:
+        with open(f"/proc/{pid}/mem", "rb") as f:
+            f.seek(addr)
+            return f.read(length)
+
+    def _scan_memory_regions(self, pid: int) -> bool:
+        try:
+            with open(f"/proc/{pid}/maps") as f:
+                lines = f.readlines()
+        except (FileNotFoundError, PermissionError):
+            return False
+
+        candidates = []
+        for line in lines:
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            perm = parts[1]
+            if "rw" not in perm:
+                continue
+            start_s, end_s = parts[0].split("-")
+            start = int(start_s, 16)
+            end = int(end_s, 16)
+            size = end - start
+            label = " ".join(parts[5:]).strip() if len(parts) > 5 else ""
+
+            if (256 * 1024 <= size <= 512 * 1024 and
+                    (not label or label == "[heap]") and "rw" in perm):
+                candidates.append((start, size))
+
+        for start, size in candidates:
+            check_offset = IWRAM_OFFSET + SAVE_BLOCK_1_PTR_OFF
+            if check_offset + 12 > size:
+                continue
+            try:
+                data = self._raw_read(pid, start + check_offset, 12)
+                sb1, sb2, storage = struct.unpack("<III", data)
+                if (0x02000000 <= sb1 <= 0x0203FFFF and
+                        0x02000000 <= sb2 <= 0x0203FFFF and
+                        0x02000000 <= storage <= 0x0203FFFF):
+                    self.gba_block_base = start
+                    log.info(f"Found GBA memory at 0x{start:x} SB1=0x{sb1:08X}")
+                    return True
+            except Exception:
+                continue
+
+        # Broader scan
+        for line in lines:
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            if "rw" not in parts[1]:
+                continue
+            start_s, end_s = parts[0].split("-")
+            start = int(start_s, 16)
+            end = int(end_s, 16)
+            size = end - start
+            label = " ".join(parts[5:]).strip() if len(parts) > 5 else ""
+            if "i915" in label or ".so" in label:
+                continue
+            if size < 384 * 1024 or size > 4 * 1024 * 1024:
+                continue
+
+            for iwram_off in range(0x40000, min(size - 0x8000, 0x100000), 0x1000):
+                try:
+                    data = self._raw_read(pid, start + iwram_off + SAVE_BLOCK_1_PTR_OFF, 12)
+                    sb1, sb2, storage = struct.unpack("<III", data)
+                    if (0x02000000 <= sb1 <= 0x0203FFFF and
+                            0x02000000 <= sb2 <= 0x0203FFFF and
+                            0x02000000 <= storage <= 0x0203FFFF):
+                        self.gba_block_base = start + (iwram_off - IWRAM_OFFSET)
+                        log.info(f"Found GBA memory (broad) at 0x{self.gba_block_base:x}")
+                        return True
+                except Exception:
+                    continue
+        return False
+
+    def connect(self) -> bool:
+        now = time.time()
+        if now - self._last_scan < self._scan_interval:
+            return self.is_connected()
+        self._last_scan = now
+
+        pid = _find_mgba_pid()
+        if pid is None:
+            self.pid = None
+            self.gba_block_base = None
+            return False
+
+        if pid == self.pid and self.gba_block_base is not None:
+            try:
+                os.kill(pid, 0)
+                return True
+            except OSError:
+                self.pid = None
+                self.gba_block_base = None
+
+        if self._scan_memory_regions(pid):
+            self.pid = pid
+            return True
+        return False
+
+    def is_connected(self) -> bool:
+        if self.pid is None or self.gba_block_base is None:
+            return False
+        try:
+            os.kill(self.pid, 0)
+            return True
+        except OSError:
+            self.pid = None
+            self.gba_block_base = None
+            return False
+
+    def _read(self, host_addr: int, length: int) -> bytes:
+        if self.pid is None:
+            raise RuntimeError("Not connected")
+        return self._raw_read(self.pid, host_addr, length)
+
+    def _read_ewram(self, off: int, length: int) -> bytes:
+        return self._read(self.ewram_host + off, length)
+
+    def _read_iwram(self, off: int, length: int) -> bytes:
+        return self._read(self.iwram_host + off, length)
+
+    def _read_ewram_u8(self, off: int) -> int:
+        return self._read_ewram(off, 1)[0]
+
+    def _read_ewram_u16(self, off: int) -> int:
+        return struct.unpack("<H", self._read_ewram(off, 2))[0]
+
+    def _read_ewram_u32(self, off: int) -> int:
+        return struct.unpack("<I", self._read_ewram(off, 4))[0]
+
+    def _read_iwram_u32(self, off: int) -> int:
+        return struct.unpack("<I", self._read_iwram(off, 4))[0]
+
+    def read_game_state(self) -> dict:
+        if not self.is_connected():
+            if not self.connect():
+                return {"status": "disconnected", "error": "mGBA not connected"}
+
+        try:
+            sb1_ptr = self._read_iwram_u32(SAVE_BLOCK_1_PTR_OFF)
+            sb2_ptr = self._read_iwram_u32(SAVE_BLOCK_2_PTR_OFF)
+
+            if not (0x02000000 <= sb1_ptr <= 0x0203FFFF and
+                    0x02000000 <= sb2_ptr <= 0x0203FFFF):
+                return {"status": "title_screen", "detail": "Save blocks not initialized"}
+
+            sb1_off = sb1_ptr - 0x02000000
+            sb2_off = sb2_ptr - 0x02000000
+
+            # Player name
+            name_data = self._read_ewram(sb2_off + SB2_PLAYER_NAME, 8)
+            player_name = decode_gen3(name_data)
+
+            # Play time
+            pt_data = self._read_ewram(sb2_off + SB2_PLAY_TIME, 5)
+            hours = struct.unpack("<H", pt_data[0:2])[0]
+            minutes = pt_data[2]
+            seconds = pt_data[3]
+
+            if not player_name.strip() and hours == 0 and minutes == 0:
+                return {"status": "title_screen", "detail": "No save loaded"}
+
+            # Position
+            px = struct.unpack("<H", self._read_ewram(sb1_off + SB1_PLAYER_X, 2))[0]
+            py = struct.unpack("<H", self._read_ewram(sb1_off + SB1_PLAYER_Y, 2))[0]
+            map_group = self._read_ewram_u8(sb1_off + SB1_MAP_GROUP)
+            map_num = self._read_ewram_u8(sb1_off + SB1_MAP_NUM)
+            map_name = MAP_NAMES.get((map_group, map_num), f"Map ({map_group}, {map_num})")
+
+            # Party
+            party_count = min(self._read_ewram_u8(sb1_off + SB1_PARTY_COUNT), 6)
+            party = []
+            for i in range(party_count):
+                mon_off = sb1_off + SB1_PARTY_DATA + (i * PARTY_MON_SIZE)
+                try:
+                    species = self._read_ewram_u16(mon_off)
+                    if species == 0 or species > 500:
+                        continue
+                    nickname = decode_gen3(self._read_ewram(mon_off + PKM_NICKNAME, 10))
+                    level = self._read_ewram_u8(mon_off + PKM_LEVEL)
+                    hp = self._read_ewram_u16(mon_off + PKM_HP)
+                    max_hp = self._read_ewram_u16(mon_off + PKM_MAX_HP)
+                    if level > 100: level = 0
+                    if max_hp > 999: max_hp = hp = 0
+                    party.append({
+                        "species": SPECIES_NAMES.get(species, f"Pokemon #{species}"),
+                        "species_id": species,
+                        "nickname": nickname,
+                        "level": level,
+                        "hp": hp,
+                        "max_hp": max_hp,
+                    })
+                except Exception:
+                    pass
+
+            # Badges
+            event_flags = self._read_ewram(sb1_off + SB1_EVENT_FLAGS, 0x200)
+            badges = 0
+            badge_list = []
+            for i in range(8):
+                flag = BADGE_FLAGS[i]
+                byte_idx = flag // 8
+                bit_idx = flag % 8
+                if byte_idx < len(event_flags) and (event_flags[byte_idx] & (1 << bit_idx)):
+                    badges += 1
+                    badge_list.append(BADGE_NAMES[i])
+
+            # Money
+            money_raw = self._read_ewram_u32(sb1_off + SB1_MONEY)
+            security_key = self._read_ewram_u32(sb1_off + SB1_SECURITY_KEY)
+            money = money_raw ^ security_key
+            if money > 999999: money = 0
+
+            # Battle state
+            battle_flags = self._read_ewram_u32(BATTLE_TYPE_FLAGS_OFF)
+            in_battle = battle_flags != 0
+
+            return {
+                "status": "in_battle" if in_battle else "overworld",
+                "player": player_name,
+                "map_name": map_name,
+                "player_x": px,
+                "player_y": py,
+                "party": party,
+                "badges": badges,
+                "badge_list": badge_list,
+                "money": money,
+                "in_battle": in_battle,
+                "playtime": f"{hours}h {minutes}m {seconds}s",
+                "mgba_pid": self.pid,
+            }
+
+        except Exception as e:
+            log.error(f"Error reading state: {e}")
+            self.pid = None
+            self.gba_block_base = None
+            return {"status": "error", "error": str(e)}
+
+
+# Global reader instance
+reader = MgbaMemoryReader()
+
+
+@app.on_event("startup")
+async def startup():
+    if reader.connect():
+        log.info(f"Connected to mGBA PID {reader.pid}")
+    else:
+        log.info("mGBA not found yet, will retry on /state requests")
+
+
+@app.get("/state")
+async def state():
+    return reader.read_game_state()
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8778)

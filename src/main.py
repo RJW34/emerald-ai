@@ -2,7 +2,7 @@
 Emerald AI - Autonomous Pokemon Emerald Player
 
 Main game loop that connects all components:
-- BizHawk bridge (emulator communication)
+- mGBA embedded emulator (emulator communication)
 - State detection (what's happening in-game)
 - Battle AI (strategic combat decisions)
 - Completion tracking (progress monitoring)
@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.emulator.bizhawk_client import BizHawkClient
+from src.emulator.mgba_client import MgbaClient
 from src.input_controller import InputController
 from src.games.pokemon_gen3.state_detector import (
     PokemonGen3StateDetector, PokemonGen3State
@@ -46,9 +46,9 @@ class EmeraldAI:
     into a coherent game loop.
     """
 
-    def __init__(self, strategy: str = "aggressive"):
+    def __init__(self, strategy: str = "aggressive", new_game: bool = False):
         # Core components
-        self.client = BizHawkClient()
+        self.client = MgbaClient(rom_path="/home/ryan/roms/emerald.gba")
         self.input = InputController(self.client)
         self.state_detector = PokemonGen3StateDetector(self.client)
         
@@ -64,6 +64,7 @@ class EmeraldAI:
         )
         
         # Game loop state
+        self.new_game = new_game
         self.tick_interval = 0.3
         self.running = False
         self._battle_context = None
@@ -104,8 +105,8 @@ class EmeraldAI:
         )
 
     def connect(self) -> bool:
-        """Connect to BizHawk emulator."""
-        logger.info("Connecting to BizHawk...")
+        """Connect to mGBA emulator."""
+        logger.info("Connecting to mGBA...")
         if self.client.connect():
             title = self.client.get_game_title()
             code = self.client.get_game_code()
@@ -114,9 +115,20 @@ class EmeraldAI:
             if code != "BPEE":
                 logger.warning(f"Expected Emerald (BPEE), got {code}")
             
+            # Load save state slot 1 if it exists and not starting fresh
+            if not self.new_game:
+                if self.client.load_state(1):
+                    logger.info("Loaded save state slot 1 — resuming from save point")
+                    # Run 60 frames to let the game stabilize after state load
+                    for _ in range(60):
+                        self.client._run_frames(1)
+                    logger.info("Game stabilized, ready to play")
+                else:
+                    logger.warning("No save state found — will navigate title screen (use --new-game if intentional)")
+            
             return True
         else:
-            logger.error("Failed to connect. Is BizHawk running with the Lua script?")
+            logger.error("Failed to connect to mGBA. Check ROM path.")
             return False
 
     def run(self):
@@ -670,6 +682,12 @@ class EmeraldAI:
 def main():
     parser = argparse.ArgumentParser(description="Emerald AI - Autonomous Pokemon Player")
     parser.add_argument(
+        "--new-game",
+        action="store_true",
+        default=False,
+        help="Start a new game instead of loading save state"
+    )
+    parser.add_argument(
         "--strategy", 
         choices=["aggressive", "safe", "speedrun", "grind", "catch"],
         default="aggressive",
@@ -677,7 +695,7 @@ def main():
     )
     args = parser.parse_args()
     
-    ai = EmeraldAI(strategy=args.strategy)
+    ai = EmeraldAI(strategy=args.strategy, new_game=args.new_game)
     ai.run()
 
 
