@@ -1,0 +1,14 @@
+[Unit]
+Description=Emerald AI Game State Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/ryan/projects/emerald-ai/game_state_server.py
+WorkingDirectory=/home/ryan/projects/emerald-ai
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

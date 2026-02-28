@@ -1,0 +1,15 @@
+[Unit]
+Description=Emerald AI Control Server
+After=network.target emerald-ai.service
+
+[Service]
+Type=simple
+ExecStart=/home/ryan/projects/emerald-ai/venv/bin/python -m uvicorn control_server:app --host 0.0.0.0 --port 8778
+WorkingDirectory=/home/ryan/projects/emerald-ai
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+Environment=DISPLAY=:0
+
+[Install]
+WantedBy=default.target

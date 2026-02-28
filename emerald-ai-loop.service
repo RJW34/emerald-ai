@@ -1,0 +1,15 @@
+[Unit]
+Description=Emerald AI Decision Loop
+After=emerald-ai.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/ryan/projects/emerald-ai/emerald_ai_loop.py
+WorkingDirectory=/home/ryan/projects/emerald-ai
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+Environment=DISPLAY=:0
+
+[Install]
+WantedBy=default.target

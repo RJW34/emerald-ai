@@ -1,0 +1,17 @@
+[Unit]
+Description=Emerald AI Brain Client (state polling + logging)
+After=network.target
+StartLimitBurst=5
+StartLimitIntervalSec=120
+
+[Service]
+Type=simple
+ExecStart=/home/ryan/projects/emerald-ai/venv/bin/python /home/ryan/projects/emerald-ai/brain_client.py --loop --interval 2.0
+WorkingDirectory=/home/ryan/projects/emerald-ai
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
