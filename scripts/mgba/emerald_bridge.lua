@@ -257,8 +257,8 @@ local function read_game_state()
     local state = { frame = frame, scene = "unknown" }
 
     -- SaveBlock pointers from IWRAM
-    local sb1_ptr = emu.memory.iwram:read32(0x5D8C)
-    local sb2_ptr = emu.memory.iwram:read32(0x5D90)
+    local sb1_ptr = emu:read32(0x03005D8C)
+    local sb2_ptr = emu:read32(0x03005D90)
 
     local sb1_valid = (sb1_ptr >= 0x02000000 and sb1_ptr <= 0x0203FFFF)
     local sb2_valid = (sb2_ptr >= 0x02000000 and sb2_ptr <= 0x0203FFFF)
@@ -320,7 +320,7 @@ local function read_game_state()
         mon.max_hp = emu:read16(base + 0x58)
 
         -- Decrypt species
-        local key = bit32.bxor(mon.personality, mon.ot_id)
+        local key = (mon.personality ~ mon.ot_id)
         local order = SUB_ORDERS[mon.personality % 24]
         if order then
             local growth_pos = -1
@@ -330,8 +330,8 @@ local function read_game_state()
             if growth_pos >= 0 then
                 local growth_addr = base + 0x20 + (growth_pos * 12)
                 local encrypted_word = emu:read32(growth_addr)
-                local decrypted = bit32.bxor(encrypted_word, key)
-                mon.species_id = bit32.band(decrypted, 0xFFFF)
+                local decrypted = (encrypted_word ~ key)
+                mon.species_id = (decrypted & 0xFFFF)
                 mon.species = SPECIES_NAMES[mon.species_id] or ("Pokemon #" .. mon.species_id)
             end
         end
@@ -342,7 +342,7 @@ local function read_game_state()
     -- Money (encrypted)
     local money_raw = emu:read32(sb1_ptr + 0x0490)
     local money_key = emu:read32(sb2_ptr + 0xAC)
-    state.money = bit32.bxor(money_raw, money_key)
+    state.money = (money_raw ~ money_key)
     if state.money > 999999 then state.money = 0 end
 
     -- Badges
@@ -353,7 +353,7 @@ local function read_game_state()
         local byte_offset = math.floor(flag_id / 8)
         local bit_offset = flag_id % 8
         local flag_byte = emu:read8(sb1_ptr + 0x1270 + byte_offset)
-        local has = bit32.band(flag_byte, bit32.lshift(1, bit_offset)) ~= 0
+        local has = (flag_byte & (1 << bit_offset)) ~= 0
         state.badges[badge + 1] = has
         if has then
             state.badge_count = state.badge_count + 1
@@ -465,7 +465,12 @@ local function handle_command(cmd_obj)
 
     elseif action == "state" then
         last_state_frame = -999
-        return read_game_state()
+        local s_ok, result = pcall(read_game_state)
+        if s_ok then
+            return result
+        else
+            return {error = "state_read_failed: " .. tostring(result), scene = "error"}
+        end
 
     elseif action == "press" then
         local button = cmd_obj.button or cmd_obj.key

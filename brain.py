@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Emerald Brain v2 — Claude-powered decision loop for Pokemon Emerald.
+Emerald Brain — Claude-powered decision loop for Pokemon Emerald.
 
-Reads game state from game_state_server (port 8776), asks Claude Haiku
-for the next action, and executes it via xdotool (MGBAController).
+Connects directly to the Lua TCP bridge running inside mGBA (port 8785).
+Reads game state via {"cmd":"state"}, sends inputs via {"cmd":"press"}.
+Asks Claude Haiku for decisions. Fully Lua-native — no xdotool, no /proc/mem.
 
 Usage:
     python3 brain.py                  # run decision loop
-    python3 brain.py --tick 3.0       # 3 second tick rate
+    python3 brain.py --tick 2.5       # 2.5 second tick rate
     python3 brain.py --dry-run        # print decisions without executing
     python3 brain.py --once           # single decision then exit
-    python3 brain.py --dry-run --once # test: one decision, no execution
 """
 
 from __future__ import annotations
@@ -20,18 +20,14 @@ import collections
 import json
 import logging
 import os
+import socket
 import sys
 import time
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 import urllib.request
 import urllib.error
-
-# Add project root so we can import the xdotool controller
-sys.path.insert(0, str(Path(__file__).parent))
-from mgba_xdotool_controller import MGBAController
 
 # ── Configuration ────────────────────────────────────────────
 
@@ -39,16 +35,54 @@ PROJECT_DIR = Path(__file__).parent
 LOG_DIR = PROJECT_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
-GAME_STATE_URL = os.environ.get("GAME_STATE_URL", "http://localhost:8776/state")
+# Lua bridge TCP connection
+LUA_HOST = os.environ.get("LUA_HOST", "127.0.0.1")
+LUA_PORT = int(os.environ.get("LUA_PORT", "8779"))
+
 TICK_RATE = float(os.environ.get("TICK_RATE", "2.0"))
 
-# API config — prefer OpenRouter (Haiku is fast+cheap for game input)
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+# API config
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-6-20250514")
+
+HISTORY_DEPTH = 12
+
+# Map names for Emerald
+MAP_NAMES = {
+    (0, 0): "Petalburg City", (0, 1): "Slateport City", (0, 2): "Mauville City",
+    (0, 3): "Rustboro City", (0, 4): "Fortree City", (0, 5): "Lilycove City",
+    (0, 6): "Mossdeep City", (0, 7): "Sootopolis City", (0, 8): "Ever Grande City",
+    (0, 9): "Littleroot Town", (0, 10): "Oldale Town", (0, 11): "Dewford Town",
+    (0, 12): "Lavaridge Town", (0, 13): "Fallarbor Town", (0, 14): "Verdanturf Town",
+    (0, 15): "Pacifidlog Town",
+    (0, 16): "Route 101", (0, 17): "Route 102", (0, 18): "Route 103",
+    (0, 19): "Route 104", (0, 25): "Route 110", (0, 26): "Route 111",
+    (0, 31): "Route 116", (0, 32): "Route 117", (0, 33): "Route 118",
+    (24, 7): "Petalburg Woods", (24, 4): "Granite Cave 1F",
+    (25, 0): "Pokemon League", (26, 0): "Player's House 1F",
+    (26, 1): "Player's House 2F", (26, 3): "Birch's Lab",
+}
+
+SPECIES_NAMES = {
+    258: "Mudkip", 259: "Marshtomp", 260: "Swampert",
+    252: "Treecko", 253: "Grovyle", 254: "Sceptile",
+    255: "Torchic", 256: "Combusken", 257: "Blaziken",
+    261: "Poochyena", 262: "Mightyena", 263: "Zigzagoon", 264: "Linoone",
+    265: "Wurmple", 270: "Lotad", 273: "Seedot", 276: "Taillow",
+    278: "Wingull", 280: "Ralts", 285: "Shroomish", 287: "Slakoth",
+    293: "Whismur", 296: "Makuhita", 300: "Skitty", 304: "Aron",
+    318: "Carvanha", 322: "Numel", 324: "Torkoal", 328: "Trapinch",
+    333: "Swablu", 339: "Barboach", 341: "Corphish", 343: "Baltoy",
+    349: "Feebas", 352: "Kecleon", 359: "Absol", 371: "Bagon",
+    374: "Beldum", 377: "Regirock", 378: "Regice", 379: "Registeel",
+    380: "Latias", 381: "Latios", 382: "Kyogre", 383: "Groudon",
+    384: "Rayquaza", 41: "Zubat", 63: "Abra", 66: "Machop",
+    72: "Tentacool", 74: "Geodude", 81: "Magnemite", 129: "Magikarp",
+    183: "Marill",
+}
 
 
 def _load_env_file(path: str):
-    """Load KEY=VALUE pairs from a file into os.environ."""
     try:
         with open(path) as f:
             for line in f:
@@ -66,20 +100,10 @@ def _load_env_file(path: str):
 
 
 _load_env_file(str(PROJECT_DIR / ".env"))
-_load_env_file(os.path.expanduser("~/.config/zeroclaw/env"))
+_load_env_file("/home/ryan/projects/emerald-ai/.env")
 
-# Re-read after loading .env files
-if not OPENROUTER_API_KEY:
-    OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 if not ANTHROPIC_API_KEY:
     ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-
-# Model selection
-OPENROUTER_MODEL = "anthropic/claude-haiku-4-5"
-ANTHROPIC_MODEL = "claude-haiku-4-5-20250610"
-
-# Conversation history depth
-HISTORY_DEPTH = 10
 
 # ── Logging ──────────────────────────────────────────────────
 
@@ -90,7 +114,6 @@ logging.basicConfig(
 )
 log = logging.getLogger("emerald-brain")
 
-# File handler for brain.log
 brain_log_handler = logging.FileHandler(LOG_DIR / "brain.log")
 brain_log_handler.setFormatter(logging.Formatter(
     "%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
@@ -98,176 +121,224 @@ brain_log_handler.setFormatter(logging.Formatter(
 log.addHandler(brain_log_handler)
 
 
-# ── Game State Reader ────────────────────────────────────────
+# ── Lua Bridge Client ────────────────────────────────────────
 
-def fetch_game_state() -> Optional[dict]:
-    """Fetch game state from game_state_server."""
-    try:
-        req = urllib.request.Request(GAME_STATE_URL, method="GET")
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            return json.loads(resp.read().decode())
-    except Exception as e:
-        log.error(f"Failed to fetch game state: {e}")
-        return None
+class LuaBridge:
+    """TCP client for the mGBA Lua bridge (port 8785).
+
+    Uses connect-per-command pattern because mGBA's Lua socket callback
+    only fires once per connection in some builds. Each command opens a
+    fresh TCP connection, sends one JSON-line, reads the response, and closes.
+    """
+
+    def __init__(self, host: str = LUA_HOST, port: int = LUA_PORT):
+        self.host = host
+        self.port = port
+
+    def send_command(self, cmd: dict, timeout: float = 5.0) -> Optional[dict]:
+        """Connect, send one command, receive one response, disconnect."""
+        sock = None
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            sock.connect((self.host, self.port))
+
+            payload = json.dumps(cmd, separators=(",", ":")) + "\n"
+            sock.sendall(payload.encode("utf-8"))
+
+            data = b""
+            while b"\n" not in data:
+                chunk = sock.recv(8192)
+                if not chunk:
+                    return None
+                data += chunk
+
+            nl = data.index(b"\n")
+            return json.loads(data[:nl].decode("utf-8", errors="replace"))
+
+        except socket.timeout:
+            log.warning("Lua bridge timeout")
+            return None
+        except ConnectionRefusedError:
+            log.warning("Lua bridge not available (connection refused)")
+            return None
+        except Exception as e:
+            log.error(f"Lua bridge error: {e}")
+            return None
+        finally:
+            if sock:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+
+    def connect(self) -> bool:
+        """Test connectivity by sending a ping."""
+        return self.ping()
+
+    def close(self):
+        pass  # No persistent connection to close
+
+    def ping(self) -> bool:
+        resp = self.send_command({"cmd": "ping"})
+        return resp is not None and resp.get("ok", False)
+
+    def get_state(self) -> Optional[dict]:
+        return self.send_command({"cmd": "state"})
+
+    def press(self, key: str, frames: int = 6) -> bool:
+        resp = self.send_command({"cmd": "press", "key": key, "frames": frames})
+        return resp is not None and resp.get("ok", False)
+
+    def screenshot(self, path: str = "/tmp/emerald_screen.png") -> bool:
+        resp = self.send_command({"cmd": "screenshot", "path": path})
+        return resp is not None and resp.get("ok", False)
 
 
-def format_state_for_prompt(state: dict) -> str:
-    """Format game state into a readable string for Claude."""
-    if not state or state.get("status") in ("disconnected", "error", "title_screen"):
-        return f"Game status: {state.get('status', 'unknown')} - {state.get('error', state.get('detail', 'N/A'))}"
+# ── Game State Formatting ────────────────────────────────────
+
+def format_lua_state(state: dict) -> str:
+    """Format Lua bridge state into readable text for Claude."""
+    if not state:
+        return "Game state: unavailable (Lua bridge not responding)"
+
+    scene = state.get("scene", "unknown")
+    if scene == "title_screen":
+        return f"Game status: title_screen — {state.get('error', 'save blocks not initialized')}"
+
+    player_name = state.get("player_name", "")
+    if not player_name:
+        return "Game status: title_screen — no player name set"
 
     lines = []
-    lines.append(f"Status: {'IN BATTLE' if state.get('in_battle') else 'Overworld'}")
-    lines.append(f"Player: {state.get('player', '?')}")
+    lines.append(f"Status: {scene.upper()}")
+    lines.append(f"Player: {player_name}")
 
-    location = state.get("location", "?")
-    map_group = state.get("map_group", "?")
-    map_num = state.get("map_num", "?")
-    lines.append(f"Location: {location} (group={map_group}, num={map_num})")
+    mg = state.get("map_group", 0)
+    mn = state.get("map_num", 0)
+    map_name = MAP_NAMES.get((mg, mn), f"Map ({mg},{mn})")
+    lines.append(f"Location: {map_name}")
 
-    pos = state.get("position", {})
-    lines.append(f"Position: x={pos.get('x', '?')}, y={pos.get('y', '?')}")
-    lines.append(f"Badges: {state.get('badges', 0)}/8")
-    lines.append(f"Money: ${state.get('money', 0):,}")
-    lines.append(f"Playtime: {state.get('playtime', '?')}")
+    px = state.get("pos_x", 0)
+    py = state.get("pos_y", 0)
+    lines.append(f"Position: ({px}, {py})")
+
+    badge_count = state.get("badge_count", 0)
+    lines.append(f"Badges: {badge_count}/8")
+
+    money = state.get("money", 0)
+    if money and money < 1000000:
+        lines.append(f"Money: ${money:,}")
+
+    ph = state.get("play_hours", 0)
+    pm = state.get("play_minutes", 0)
+    ps = state.get("play_seconds", 0)
+    lines.append(f"Playtime: {ph}h {pm}m {ps}s")
+
+    in_battle = scene == "battle"
+    lines.append(f"In Battle: {in_battle}")
 
     party = state.get("party", [])
     party_count = state.get("party_count", len(party))
     if party:
-        lines.append(f"Party ({party_count} Pokemon):")
+        lines.append(f"Party ({party_count}):")
         for i, mon in enumerate(party):
-            sp = mon.get("species", f"#{mon.get('species_id', '?')}")
+            sp_id = mon.get("species", 0)
+            sp_name = SPECIES_NAMES.get(sp_id, f"Pokemon #{sp_id}")
             nick = mon.get("nickname", "?")
             lv = mon.get("level", "?")
             hp = mon.get("hp", "?")
             max_hp = mon.get("max_hp", "?")
-            lines.append(f"  [{i+1}] {nick} ({sp}) Lv{lv} HP:{hp}/{max_hp}")
+            lines.append(f"  [{i+1}] {nick} ({sp_name}) Lv{lv} HP:{hp}/{max_hp}")
     else:
-        lines.append(f"Party: EMPTY (0 Pokemon) — you have not received your starter yet!")
+        lines.append("Party: EMPTY — you have not received your starter yet!")
 
     return "\n".join(lines)
 
 
 # ── System Prompt ────────────────────────────────────────────
 
-SYSTEM_PROMPT = """You are an AI playing Pokemon Emerald on a GBA emulator. You control the game by issuing button presses via JSON commands.
+SYSTEM_PROMPT = """You are an AI playing Pokemon Emerald on a GBA emulator. Your player name is RYAN and your starter is Mudkip. You control the game by issuing button presses.
 
 ## Available Buttons
-A, B, Start, Select, Up, Down, Left, Right, L, R
+A, B, START, SELECT, UP, DOWN, LEFT, RIGHT, L, R
 
 ## Action Format
-Reply with ONLY a JSON object. No other text, no explanation, no markdown.
+Reply with ONLY a JSON object. No other text.
 
-Single button press:
-{"action": "press", "button": "A"}
+Single button:
+{"action": "press", "key": "A"}
 
-Walk multiple steps in a direction:
-{"action": "walk", "direction": "Up", "steps": 3}
+Walk a direction:
+{"action": "walk", "direction": "UP", "steps": 5}
 
-Mash A to advance text/dialogue:
-{"action": "mash_a", "count": 5}
+Mash A for dialogue:
+{"action": "mash_a", "count": 8}
 
-Button sequence (for menus, complex navigation):
-{"action": "sequence", "buttons": ["Down", "A"], "delay_ms": 150}
+Button sequence:
+{"action": "sequence", "keys": ["DOWN", "DOWN", "A"]}
 
-## Pokemon Emerald Early Game Walkthrough
+## Game Knowledge
 
-### Phase 1: Pre-Starter (party_count = 0)
-You start in Littleroot Town inside the moving truck. The game flow is:
-1. Exit the moving truck (press A through dialogue, walk down to exit)
-2. Mom talks to you inside the house — press A through her dialogue
-3. Go upstairs, set the clock — press A, then Left/Right to set time, confirm with A
-4. Go downstairs, Mom tells you to visit the neighbor — exit the house
-5. Visit the house next door (Birch's house/lab area)
-6. May/Brendan's room is upstairs — talk to them (or they may not be there)
-7. **KEY: Walk NORTH out of Littleroot Town onto Route 101**
-8. Professor Birch is being chased by a Zigzagoon — he yells for help
-9. Walk to his bag on the ground and press A to open it
-10. **Choose MUDKIP** (it's the first option — press A to select, A to confirm)
-11. Battle the wild Zigzagoon with Mudkip (just use Tackle — press A repeatedly)
-12. After winning, Birch takes you back to his lab
+### Early Game Flow (Pre-Starter, party empty)
+1. Start → NEW GAME → intro speech → name RYAN → arrive in truck
+2. Exit truck (A through text, walk down)
+3. Mom talks in house → go upstairs → set clock → go back down
+4. Exit house, walk north out of Littleroot Town to Route 101
+5. Birch chased by Zigzagoon → choose Mudkip from bag
+6. Battle Zigzagoon → return to lab → get Pokedex
 
-### Phase 2: Post-Starter (party_count >= 1, badges = 0)
-1. Birch gives you the Mudkip permanently in the lab
-2. Go to Route 101 → Route 103 (north)
-3. Battle your Rival (May/Brendan) on Route 103
-4. Return to Birch's lab — get the Pokedex
-5. Mom gives you Running Shoes
-6. Route 102 (west) → Petalburg City
-7. Visit Petalburg Gym — meet Dad (Norman), see Wally catch a Ralts
-8. Route 104 → Petalburg Woods → Route 104 north → Rustboro City
-9. **First Gym: Rustboro City (Rock type, Leader Roxanne)**
+### Post-Starter (badges = 0)
+1. Route 103 north → rival battle → back to lab → Pokedex
+2. Route 102 west → Petalburg City → meet Dad/Wally
+3. Route 104 → Petalburg Woods → Rustboro City
+4. First gym: Roxanne (Rock type) — use Water Gun
 
-### Map Reference
-- Littleroot Town: Map group 1, map 4 — your starting town
-- Route 101: North of Littleroot — connects to Oldale Town
-- Oldale Town: North of Route 101
-- Route 103: North of Oldale (rival battle location)
-- Route 102: West of Oldale — connects to Petalburg City
-- Petalburg City: West end of Route 102 (Dad's gym)
+### Navigation
+- If position doesn't change after walking, you're hitting a wall — try another direction
+- For dialogue: mash A to advance text
+- For menus: UP/DOWN to navigate, A to select, B to back out
+- If stuck for 3+ turns at same position, try something completely different
 
-### Littleroot Town Layout (Map 1,4)
-- Player's house: center area
-- Birch's lab: south part of town
-- Exit to Route 101: NORTH edge of town (walk UP to leave town)
-- The town is small — just a few buildings
+### Battle
+- Select FIGHT then pick a move. Mudkip learns Water Gun at Lv6.
+- Low HP? Use Potion from BAG in battle menu.
+- Wild battles: fight to train, run from weak stuff if HP is low.
 
-## Navigation Rules
-- In the overworld, walk toward your current objective
-- If you've been walking in one direction and hitting walls (position not changing), try a different direction
-- When you see text/dialogue, mash A to advance through it
-- In menus, use Up/Down to navigate, A to select, B to go back
-- If stuck in a menu you don't want, press B to exit
-- If party_count is 0: your ONLY goal is getting north to Route 101 for the Birch encounter
-- If you're at the same position for multiple turns, you're stuck — try a different approach
-
-## Battle Strategy
-- Early game: just use your first move (Tackle for Mudkip) — press A to select Fight, A to select first move
-- If HP is low, consider using a Potion (go to Bag in battle menu)
-- Against rival: Mudkip's Water Gun (learned at level 6) is your best move
-
-## Critical Rules
-1. Output ONLY the JSON action. No explanation, no markdown code blocks.
-2. Pay attention to your position coordinates — if they don't change after walking, you hit a wall.
-3. When party is empty (0 Pokemon), go NORTH from Littleroot to Route 101.
-4. Read the game state carefully each turn — adapt your plan based on what changed.
-5. Don't keep repeating the same action if nothing is changing — try something different."""
+## Rules
+1. Output ONLY JSON. No markdown, no explanation.
+2. Watch your position — adapt if it doesn't change.
+3. Don't repeat the same failing action.
+4. Be strategic about leveling before gym battles."""
 
 
 # ── Conversation History ─────────────────────────────────────
 
 class ConversationHistory:
-    """Rolling window of recent decisions and their outcomes."""
-
     def __init__(self, max_entries: int = HISTORY_DEPTH):
         self.entries: collections.deque = collections.deque(maxlen=max_entries)
-        self._last_position = None
 
     def add(self, state_summary: str, action: dict, position: tuple):
-        """Record a decision and the game state when it was made."""
-        entry = {
+        self.entries.append({
             "state": state_summary,
             "action": action,
             "position": position,
-        }
-        self.entries.append(entry)
+        })
 
     def format_for_prompt(self) -> str:
-        """Format recent history for inclusion in the prompt."""
         if not self.entries:
-            return "No previous actions yet — this is the first decision."
+            return "No previous actions — first decision."
 
-        lines = ["Recent action history (oldest first):"]
+        lines = ["Recent history (oldest first):"]
         for i, entry in enumerate(self.entries):
             pos = entry["position"]
-            act = json.dumps(entry["action"])
-            lines.append(f"  Turn {i+1}: At ({pos[0]},{pos[1]}) — did {act}")
+            act = json.dumps(entry["action"], separators=(",", ":"))
+            lines.append(f"  Turn {i+1}: pos=({pos[0]},{pos[1]}) → {act}")
 
-        # Detect if stuck (same position for last 3+ turns)
         if len(self.entries) >= 3:
-            recent_positions = [e["position"] for e in list(self.entries)[-3:]]
-            if all(p == recent_positions[0] for p in recent_positions):
-                lines.append("  ⚠ WARNING: Position has not changed for 3+ turns! You are STUCK. Try a completely different direction or action.")
+            recent = [e["position"] for e in list(self.entries)[-3:]]
+            if all(p == recent[0] for p in recent):
+                lines.append("  *** STUCK: Position unchanged for 3+ turns! Try a completely different approach. ***")
 
         return "\n".join(lines)
 
@@ -275,79 +346,21 @@ class ConversationHistory:
 # ── Claude API ───────────────────────────────────────────────
 
 def call_claude(game_state_text: str, history: ConversationHistory) -> Optional[dict]:
-    """Call Claude API to decide the next action."""
-
-    history_text = history.format_for_prompt()
+    if not ANTHROPIC_API_KEY:
+        log.error("No ANTHROPIC_API_KEY configured")
+        return None
 
     user_message = (
         f"Current game state:\n{game_state_text}\n\n"
-        f"{history_text}\n\n"
-        f"What is your next action? Reply with ONLY a JSON object."
+        f"{history.format_for_prompt()}\n\n"
+        f"What is your next action? Reply with ONLY JSON."
     )
 
-    # Try OpenRouter first (Haiku via OpenRouter)
-    if OPENROUTER_API_KEY:
-        result = _call_openrouter(user_message)
-        if result is not None:
-            return result
-        log.warning("OpenRouter call failed, trying direct Anthropic...")
-
-    # Fallback to direct Anthropic
-    if ANTHROPIC_API_KEY:
-        result = _call_anthropic(user_message)
-        if result is not None:
-            return result
-        log.warning("Direct Anthropic call also failed")
-
-    log.error("All API providers failed")
-    return None
-
-
-def _call_openrouter(user_message: str) -> Optional[dict]:
-    """Call Claude Haiku via OpenRouter."""
-    try:
-        body = json.dumps({
-            "model": OPENROUTER_MODEL,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_message},
-            ],
-            "max_tokens": 200,
-            "temperature": 0.3,
-        }).encode()
-
-        req = urllib.request.Request(
-            "https://openrouter.ai/api/v1/chat/completions",
-            data=body,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "HTTP-Referer": "https://github.com/deku-emerald-ai",
-                "X-Title": "Emerald AI Brain",
-            },
-            method="POST",
-        )
-
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read().decode())
-
-        content = data["choices"][0]["message"]["content"].strip()
-        return _parse_action(content)
-
-    except Exception as e:
-        log.error(f"OpenRouter error: {e}")
-        return None
-
-
-def _call_anthropic(user_message: str) -> Optional[dict]:
-    """Call Claude Haiku via direct Anthropic API."""
     try:
         body = json.dumps({
             "model": ANTHROPIC_MODEL,
             "system": SYSTEM_PROMPT,
-            "messages": [
-                {"role": "user", "content": user_message},
-            ],
+            "messages": [{"role": "user", "content": user_message}],
             "max_tokens": 200,
             "temperature": 0.3,
         }).encode()
@@ -363,22 +376,23 @@ def _call_anthropic(user_message: str) -> Optional[dict]:
             method="POST",
         )
 
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=20) as resp:
             data = json.loads(resp.read().decode())
 
         content = data["content"][0]["text"].strip()
         return _parse_action(content)
 
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode() if hasattr(e, "read") else ""
+        log.error(f"Anthropic API {e.code}: {error_body[:300]}")
+        return None
     except Exception as e:
-        log.error(f"Anthropic error: {e}")
+        log.error(f"Claude call failed: {e}")
         return None
 
 
 def _parse_action(content: str) -> Optional[dict]:
-    """Parse Claude's response into an action dict."""
     content = content.strip()
-
-    # Remove markdown code blocks if present
     if content.startswith("```"):
         lines = content.split("\n")
         lines = [l for l in lines if not l.strip().startswith("```")]
@@ -391,7 +405,6 @@ def _parse_action(content: str) -> Optional[dict]:
     except json.JSONDecodeError:
         pass
 
-    # Try to find JSON in the response
     start = content.find("{")
     end = content.rfind("}") + 1
     if start >= 0 and end > start:
@@ -402,48 +415,44 @@ def _parse_action(content: str) -> Optional[dict]:
         except json.JSONDecodeError:
             pass
 
-    log.warning(f"Could not parse action from response: {content[:200]}")
+    log.warning(f"Could not parse action: {content[:200]}")
     return None
 
 
 # ── Action Executor ──────────────────────────────────────────
 
-def execute_action(ctrl: MGBAController, action: dict) -> bool:
-    """Execute a parsed action via the xdotool controller."""
+def execute_action(bridge: LuaBridge, action: dict) -> bool:
     action_type = action.get("action", "")
 
     try:
         if action_type == "press":
-            button = action.get("button", "A").lower()
-            ctrl.press_button(button)
-            return True
+            key = action.get("key", "A")
+            frames = action.get("frames", 6)
+            return bridge.press(key, frames)
 
         elif action_type == "walk":
-            direction = action.get("direction", "Up").lower()
-            steps = min(action.get("steps", 1), 10)  # cap at 10 steps
+            direction = action.get("direction", "UP")
+            steps = min(action.get("steps", 1), 15)
             for _ in range(steps):
-                ctrl.press_button(direction)
-                time.sleep(0.15)  # small delay between steps
+                if not bridge.press(direction, 8):
+                    return False
+                time.sleep(0.15)
             return True
 
         elif action_type == "mash_a":
-            count = min(action.get("count", 5), 20)  # cap at 20
+            count = min(action.get("count", 5), 25)
             for _ in range(count):
-                ctrl.press_a()
+                if not bridge.press("A", 4):
+                    return False
                 time.sleep(0.1)
             return True
 
         elif action_type == "sequence":
-            buttons = action.get("buttons", [])
-            delay_ms = action.get("delay_ms", 150)
-            if buttons:
-                ctrl.sequence([b.lower() for b in buttons[:15]], delay_ms=delay_ms)
-            return True
-
-        elif action_type == "hold":
-            button = action.get("button", "A").lower()
-            ms = action.get("ms", 500)
-            ctrl.press_and_hold(button, min(ms, 2000))
+            keys = action.get("keys", [])
+            for key in keys[:20]:
+                if not bridge.press(key, 6):
+                    return False
+                time.sleep(0.15)
             return True
 
         else:
@@ -451,145 +460,137 @@ def execute_action(ctrl: MGBAController, action: dict) -> bool:
             return False
 
     except Exception as e:
-        log.error(f"Action execution error: {e}")
+        log.error(f"Execution error: {e}")
         return False
 
 
 # ── Main Loop ────────────────────────────────────────────────
 
 def run_brain(tick_rate: float = 2.0, dry_run: bool = False, once: bool = False):
-    """Main decision loop."""
     log.info("=" * 50)
-    log.info("Emerald Brain v2 starting")
-    log.info(f"  Tick rate: {tick_rate}s")
-    log.info(f"  Game state: {GAME_STATE_URL}")
-    log.info(f"  API: {'OpenRouter' if OPENROUTER_API_KEY else 'Anthropic' if ANTHROPIC_API_KEY else 'NONE'}")
-    log.info(f"  Dry run: {dry_run}")
-    log.info(f"  History depth: {HISTORY_DEPTH}")
+    log.info("Emerald Brain v3 (Lua-native) starting")
+    log.info(f"  Bridge: {LUA_HOST}:{LUA_PORT}")
+    log.info(f"  Model:  {ANTHROPIC_MODEL}")
+    log.info(f"  Tick:   {tick_rate}s")
+    log.info(f"  Dry:    {dry_run}")
     log.info("=" * 50)
 
-    if not OPENROUTER_API_KEY and not ANTHROPIC_API_KEY:
-        log.error("No API key configured! Set OPENROUTER_API_KEY or ANTHROPIC_API_KEY")
-        log.error("Checked: .env, ~/.config/zeroclaw/env")
+    if not ANTHROPIC_API_KEY:
+        log.error("No ANTHROPIC_API_KEY! Set it in .env or environment.")
         return
 
-    ctrl = None
-    if not dry_run:
-        try:
-            ctrl = MGBAController()
-            log.info(f"Connected to mGBA window {ctrl.window_id}")
-        except RuntimeError as e:
-            log.error(f"Cannot find mGBA window: {e}")
-            log.error("Is mGBA running? Is MGBA_WINDOW_ID set?")
-            return
+    bridge = LuaBridge()
+    if not bridge.connect():
+        log.error("Cannot connect to Lua bridge. Is mGBA running with the script?")
+        return
+
+    if bridge.ping():
+        log.info("Lua bridge ping: OK")
+    else:
+        log.error("Lua bridge ping failed")
+        return
 
     history = ConversationHistory(max_entries=HISTORY_DEPTH)
     decision_count = 0
     error_streak = 0
-    MAX_ERROR_STREAK = 10
 
     try:
         while True:
             tick_start = time.time()
             decision_count += 1
 
-            # 1. Fetch game state
-            state = fetch_game_state()
+            # 1. Fetch game state from Lua bridge
+            state = bridge.get_state()
             if not state:
-                log.warning(f"[#{decision_count}] Could not fetch game state")
+                log.warning(f"[#{decision_count}] No state from Lua bridge")
                 error_streak += 1
-                if error_streak >= MAX_ERROR_STREAK:
-                    log.error(f"Too many consecutive errors ({error_streak}), sleeping 30s...")
-                    time.sleep(30)
+                if error_streak >= 5:
+                    log.info("Reconnecting to Lua bridge...")
+                    bridge.close()
+                    if not bridge.connect():
+                        log.error("Reconnection failed, sleeping 10s")
+                        time.sleep(10)
                     error_streak = 0
-                else:
-                    time.sleep(tick_rate)
-                continue
-
-            # Skip if not in a playable state
-            status = state.get("status", "")
-            if status in ("disconnected", "error"):
-                log.info(f"[#{decision_count}] Not in game: {status} — waiting")
                 time.sleep(tick_rate)
                 continue
 
-            # Handle title screen — mash A/Start to get through
-            if status == "title_screen":
-                log.info(f"[#{decision_count}] Title screen — mashing A")
-                if ctrl:
-                    ctrl.press_a()
-                    time.sleep(0.3)
-                    ctrl.press_start()
+            scene = state.get("scene", "unknown")
+
+            # Handle title screen — press A/START to advance
+            if scene == "title_screen" or not state.get("player_name"):
+                log.info(f"[#{decision_count}] Title screen — pressing A")
+                if not dry_run:
+                    bridge.press("A", 6)
+                    time.sleep(0.5)
+                    bridge.press("START", 6)
                 time.sleep(tick_rate)
                 continue
 
             # 2. Format state for Claude
-            state_text = format_state_for_prompt(state)
-            pos = state.get("position", {})
-            current_pos = (pos.get("x", 0), pos.get("y", 0))
+            state_text = format_lua_state(state)
+            px = state.get("pos_x", 0)
+            py = state.get("pos_y", 0)
+            current_pos = (px, py)
 
-            log.info(f"[#{decision_count}] State: {state.get('location', '?')} "
-                     f"pos={current_pos} badges={state.get('badges', 0)} "
-                     f"party={state.get('party_count', 0)}")
+            mg = state.get("map_group", 0)
+            mn = state.get("map_num", 0)
+            map_name = MAP_NAMES.get((mg, mn), f"Map({mg},{mn})")
 
-            # 3. Ask Claude for next action
+            log.info(f"[#{decision_count}] {map_name} pos={current_pos} "
+                     f"badges={state.get('badge_count', 0)} "
+                     f"party={state.get('party_count', 0)} "
+                     f"scene={scene}")
+
+            # 3. Ask Claude
             action = call_claude(state_text, history)
             if not action:
-                log.warning(f"[#{decision_count}] Claude returned no action")
+                log.warning(f"[#{decision_count}] No action from Claude")
                 error_streak += 1
                 time.sleep(tick_rate)
                 continue
 
-            log.info(f"[#{decision_count}] Decision: {json.dumps(action)}")
+            log.info(f"[#{decision_count}] Action: {json.dumps(action, separators=(',', ':'))}")
             error_streak = 0
 
-            # 4. Record in history
-            summary = f"{state.get('location', '?')} pos={current_pos} party={state.get('party_count', 0)}"
-            history.add(summary, action, current_pos)
+            # 4. Record history
+            history.add(f"{map_name} pos={current_pos}", action, current_pos)
 
-            # 5. Execute the action
+            # 5. Execute
             if dry_run:
-                log.info(f"[#{decision_count}] DRY RUN — would execute: {action}")
+                log.info(f"[#{decision_count}] DRY RUN — skipping")
             else:
-                success = execute_action(ctrl, action)
-                if success:
-                    log.info(f"[#{decision_count}] Action executed successfully")
-                else:
-                    log.warning(f"[#{decision_count}] Action execution failed")
+                ok = execute_action(bridge, action)
+                log.info(f"[#{decision_count}] Executed: {'OK' if ok else 'FAILED'}")
 
             if once:
-                log.info("Single decision mode — exiting")
+                log.info("Single decision mode — done")
                 break
 
-            # 6. Sleep for remaining tick time
+            # 6. Sleep remaining tick time
             elapsed = time.time() - tick_start
-            sleep_time = max(0, tick_rate - elapsed)
-            if sleep_time > 0:
-                time.sleep(sleep_time)
+            remaining = max(0, tick_rate - elapsed)
+            if remaining > 0:
+                time.sleep(remaining)
 
     except KeyboardInterrupt:
         log.info("Brain stopped by user")
     finally:
+        bridge.close()
         log.info(f"Brain shut down after {decision_count} decisions")
 
 
-# ── Entry point ──────────────────────────────────────────────
-
 def main():
-    global GAME_STATE_URL
-
-    parser = argparse.ArgumentParser(description="Emerald Brain v2 — Claude decision loop")
-    parser.add_argument("--tick", type=float, default=TICK_RATE,
-                        help=f"Seconds between decisions (default: {TICK_RATE})")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Print decisions without executing (skip controller init)")
-    parser.add_argument("--once", action="store_true",
-                        help="Make one decision then exit")
-    parser.add_argument("--state-url", default=GAME_STATE_URL,
-                        help=f"Game state server URL (default: {GAME_STATE_URL})")
+    parser = argparse.ArgumentParser(description="Emerald Brain v3 — Lua-native Claude loop")
+    parser.add_argument("--tick", type=float, default=TICK_RATE, help="Seconds between decisions")
+    parser.add_argument("--dry-run", action="store_true", help="Print without executing")
+    parser.add_argument("--once", action="store_true", help="One decision then exit")
+    parser.add_argument("--host", default=LUA_HOST, help="Lua bridge host")
+    parser.add_argument("--port", type=int, default=LUA_PORT, help="Lua bridge port")
     args = parser.parse_args()
 
-    GAME_STATE_URL = args.state_url
+    global LUA_HOST, LUA_PORT
+    LUA_HOST = args.host
+    LUA_PORT = args.port
 
     run_brain(tick_rate=args.tick, dry_run=args.dry_run, once=args.once)
 
