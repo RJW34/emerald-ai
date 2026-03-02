@@ -1,0 +1,261 @@
+{
+  "id": "LITTLEROOT_TOWN_BRENDANS_HOUSE_2F",
+  "name": "LittlerootTown_BrendansHouse_2F",
+  "dimensions": {
+    "width": 9,
+    "height": 8
+  },
+  "mapType": "MAP_TYPE_INDOOR",
+  "weather": "WEATHER_NONE",
+  "music": "MUS_LITTLEROOT",
+  "flags": {
+    "allowCycling": false,
+    "allowRunning": false,
+    "allowEscaping": false,
+    "requiresFlash": false,
+    "showMapName": false
+  },
+  "connections": null,
+  "warps": [
+    {
+      "x": 7,
+      "y": 1,
+      "elevation": 0,
+      "destination": "LITTLEROOT_TOWN_BRENDANS_HOUSE_1F",
+      "destWarpId": 2
+    }
+  ],
+  "npcs": [
+    {
+      "x": 7,
+      "y": 1,
+      "elevation": 0,
+      "graphicsId": "OBJ_EVENT_GFX_RIVAL_BRENDAN_NORMAL",
+      "movement": "face_down",
+      "movementRange": {
+        "x": 1,
+        "y": 0
+      },
+      "localId": "LOCALID_RIVALS_HOUSE_2F_RIVAL",
+      "script": "RivalsHouse_2F_EventScript_Rival",
+      "flag": "FLAG_HIDE_LITTLEROOT_TOWN_BRENDANS_HOUSE_RIVAL_BEDROOM"
+    },
+    {
+      "x": 0,
+      "y": 0,
+      "elevation": 0,
+      "graphicsId": "OBJ_EVENT_GFX_VAR_0",
+      "movement": "look_around",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "flag": "FLAG_DECORATION_1"
+    },
+    {
+      "x": 0,
+      "y": 1,
+      "elevation": 0,
+      "graphicsId": "OBJ_EVENT_GFX_VAR_1",
+      "movement": "look_around",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "flag": "FLAG_DECORATION_2"
+    },
+    {
+      "x": 0,
+      "y": 2,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_VAR_2",
+      "movement": "look_around",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "flag": "FLAG_DECORATION_3"
+    },
+    {
+      "x": 0,
+      "y": 3,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_VAR_3",
+      "movement": "look_around",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "flag": "FLAG_DECORATION_4"
+    },
+    {
+      "x": 0,
+      "y": 4,
+      "elevation": 0,
+      "graphicsId": "OBJ_EVENT_GFX_VAR_4",
+      "movement": "look_around",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "flag": "FLAG_DECORATION_5"
+    },
+    {
+      "x": 0,
+      "y": 5,
+      "elevation": 4,
+      "graphicsId": "OBJ_EVENT_GFX_VAR_5",
+      "movement": "look_around",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "flag": "FLAG_DECORATION_6"
+    },
+    {
+      "x": 1,
+      "y": 0,
+      "elevation": 0,
+      "graphicsId": "OBJ_EVENT_GFX_VAR_6",
+      "movement": "look_around",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "flag": "FLAG_DECORATION_7"
+    },
+    {
+      "x": 1,
+      "y": 1,
+      "elevation": 0,
+      "graphicsId": "OBJ_EVENT_GFX_VAR_7",
+      "movement": "look_around",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "flag": "FLAG_DECORATION_8"
+    },
+    {
+      "x": 1,
+      "y": 2,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_VAR_8",
+      "movement": "look_around",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "flag": "FLAG_DECORATION_9"
+    },
+    {
+      "x": 1,
+      "y": 3,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_VAR_9",
+      "movement": "look_around",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "flag": "FLAG_DECORATION_10"
+    },
+    {
+      "x": 1,
+      "y": 4,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_VAR_A",
+      "movement": "look_around",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "flag": "FLAG_DECORATION_11"
+    },
+    {
+      "x": 1,
+      "y": 5,
+      "elevation": 0,
+      "graphicsId": "OBJ_EVENT_GFX_VAR_B",
+      "movement": "look_around",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "flag": "FLAG_DECORATION_12"
+    },
+    {
+      "x": 7,
+      "y": 1,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_MOM",
+      "movement": "face_down",
+      "movementRange": {
+        "x": 1,
+        "y": 0
+      },
+      "localId": "LOCALID_PLAYERS_HOUSE_2F_MOM",
+      "flag": "FLAG_HIDE_LITTLEROOT_TOWN_PLAYERS_BEDROOM_MOM"
+    },
+    {
+      "x": 3,
+      "y": 4,
+      "elevation": 0,
+      "graphicsId": "OBJ_EVENT_GFX_ITEM_BALL",
+      "movement": "look_around",
+      "movementRange": {
+        "x": 1,
+        "y": 1
+      },
+      "script": "LittlerootTown_BrendansHouse_2F_EventScript_RivalsPokeBall",
+      "flag": "FLAG_HIDE_LITTLEROOT_TOWN_BRENDANS_HOUSE_2F_POKE_BALL"
+    },
+    {
+      "x": 5,
+      "y": 5,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_SWABLU_DOLL",
+      "movement": "look_around",
+      "movementRange": {
+        "x": 1,
+        "y": 1
+      },
+      "flag": "FLAG_HIDE_LITTLEROOT_TOWN_BRENDANS_HOUSE_2F_SWABLU_DOLL"
+    }
+  ],
+  "triggers": [],
+  "bgEvents": [
+    {
+      "x": 0,
+      "y": 1,
+      "elevation": 0,
+      "type": "sign",
+      "script": "LittlerootTown_BrendansHouse_2F_EventScript_PC",
+      "playerFacingDir": "BG_EVENT_PLAYER_FACING_NORTH"
+    },
+    {
+      "x": 1,
+      "y": 1,
+      "elevation": 0,
+      "type": "sign",
+      "script": "PlayersHouse_2F_EventScript_Notebook",
+      "playerFacingDir": "BG_EVENT_PLAYER_FACING_ANY"
+    },
+    {
+      "x": 5,
+      "y": 1,
+      "elevation": 0,
+      "type": "sign",
+      "script": "LittlerootTown_BrendansHouse_2F_EventScript_WallClock",
+      "playerFacingDir": "BG_EVENT_PLAYER_FACING_ANY"
+    },
+    {
+      "x": 3,
+      "y": 1,
+      "elevation": 0,
+      "type": "sign",
+      "script": "PlayersHouse_2F_EventScript_GameCube",
+      "playerFacingDir": "BG_EVENT_PLAYER_FACING_ANY"
+    }
+  ]
+}

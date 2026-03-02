@@ -1,0 +1,201 @@
+{
+  "id": "ROUTE101",
+  "name": "Route101",
+  "dimensions": {
+    "width": 20,
+    "height": 20
+  },
+  "mapType": "MAP_TYPE_ROUTE",
+  "weather": "WEATHER_SUNNY",
+  "music": "MUS_ROUTE101",
+  "flags": {
+    "allowCycling": true,
+    "allowRunning": true,
+    "allowEscaping": false,
+    "requiresFlash": false,
+    "showMapName": true
+  },
+  "connections": {
+    "north": {
+      "map": "OLDALE_TOWN",
+      "offset": 0
+    },
+    "south": {
+      "map": "LITTLEROOT_TOWN",
+      "offset": 0
+    }
+  },
+  "warps": [],
+  "npcs": [
+    {
+      "x": 16,
+      "y": 8,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_YOUNGSTER",
+      "movement": "look_around",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "script": "Route101_EventScript_Youngster"
+    },
+    {
+      "x": 9,
+      "y": 13,
+      "elevation": 0,
+      "graphicsId": "OBJ_EVENT_GFX_PROF_BIRCH",
+      "movement": "jog_in_place_right",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "localId": "LOCALID_ROUTE101_BIRCH",
+      "flag": "FLAG_HIDE_ROUTE_101_BIRCH_ZIGZAGOON_BATTLE"
+    },
+    {
+      "x": 7,
+      "y": 14,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_BIRCHS_BAG",
+      "movement": "look_around",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "script": "Route101_EventScript_BirchsBag",
+      "flag": "FLAG_HIDE_ROUTE_101_BIRCH_STARTERS_BAG"
+    },
+    {
+      "x": 10,
+      "y": 13,
+      "elevation": 0,
+      "graphicsId": "OBJ_EVENT_GFX_ZIGZAGOON_1",
+      "movement": "jog_in_place_left",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "localId": "LOCALID_ROUTE101_ZIGZAGOON",
+      "flag": "FLAG_HIDE_ROUTE_101_ZIGZAGOON"
+    },
+    {
+      "x": 5,
+      "y": 11,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_PROF_BIRCH",
+      "movement": "look_around",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "script": "ProfBirch_EventScript_RatePokedexOrRegister",
+      "flag": "FLAG_HIDE_ROUTE_101_BIRCH"
+    },
+    {
+      "x": 2,
+      "y": 13,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_BOY_2",
+      "movement": "wander_left_and_right",
+      "movementRange": {
+        "x": 1,
+        "y": 1
+      },
+      "script": "Route101_EventScript_Boy",
+      "flag": "FLAG_HIDE_ROUTE_101_BOY"
+    }
+  ],
+  "triggers": [
+    {
+      "x": 10,
+      "y": 19,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_ROUTE101_STATE",
+      "varValue": 1,
+      "script": "Route101_EventScript_StartBirchRescue"
+    },
+    {
+      "x": 11,
+      "y": 19,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_ROUTE101_STATE",
+      "varValue": 1,
+      "script": "Route101_EventScript_StartBirchRescue"
+    },
+    {
+      "x": 10,
+      "y": 18,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_ROUTE101_STATE",
+      "varValue": 2,
+      "script": "Route101_EventScript_PreventExitSouth"
+    },
+    {
+      "x": 11,
+      "y": 18,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_ROUTE101_STATE",
+      "varValue": 2,
+      "script": "Route101_EventScript_PreventExitSouth"
+    },
+    {
+      "x": 6,
+      "y": 16,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_ROUTE101_STATE",
+      "varValue": 2,
+      "script": "Route101_EventScript_PreventExitWest"
+    },
+    {
+      "x": 6,
+      "y": 15,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_ROUTE101_STATE",
+      "varValue": 2,
+      "script": "Route101_EventScript_PreventExitWest"
+    },
+    {
+      "x": 6,
+      "y": 17,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_ROUTE101_STATE",
+      "varValue": 2,
+      "script": "Route101_EventScript_PreventExitWest"
+    },
+    {
+      "x": 6,
+      "y": 18,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_ROUTE101_STATE",
+      "varValue": 2,
+      "script": "Route101_EventScript_PreventExitWest"
+    },
+    {
+      "x": 7,
+      "y": 13,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_ROUTE101_STATE",
+      "varValue": 2,
+      "script": "Route101_EventScript_PreventExitNorth"
+    }
+  ],
+  "bgEvents": [
+    {
+      "x": 5,
+      "y": 9,
+      "elevation": 0,
+      "type": "sign",
+      "script": "Route101_EventScript_RouteSign",
+      "playerFacingDir": "BG_EVENT_PLAYER_FACING_ANY"
+    }
+  ]
+}

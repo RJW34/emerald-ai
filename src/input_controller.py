@@ -39,6 +39,7 @@ class InputController:
         self.client = client
         self.input_cooldown = input_cooldown
         self._last_input_time = 0.0
+        self._walking_direction = None
 
     def tap(self, button: str) -> bool:
         """
@@ -86,6 +87,40 @@ class InputController:
 
         logger.debug(f"Hold: {button} for {frames} frames")
         return result
+
+    def walk(self, direction: str, frames: int = 16) -> bool:
+        """
+        Walk in a direction by holding the d-pad.
+
+        Used by the learning module's overworld navigation and error recovery
+        systems for continuous movement rather than single-frame taps.
+
+        Args:
+            direction: Direction to walk (Up, Down, Left, Right)
+            frames: Number of frames to hold direction (default 16 = ~0.27s at 60fps)
+
+        Returns:
+            True if input was sent successfully
+        """
+        if direction not in ("Up", "Down", "Left", "Right"):
+            logger.warning(f"Invalid walk direction: {direction}")
+            return False
+
+        self._walking_direction = direction
+        return self.hold(direction, frames)
+
+    def stop_walking(self) -> None:
+        """
+        Stop any current walking movement.
+
+        Called by the learning module's error recovery system before
+        attempting recovery actions, and by the overworld handler when
+        reaching a navigation target.
+        """
+        self._walking_direction = None
+        # Release all directional inputs by sending a neutral frame
+        # (BizHawk will stop holding after the hold duration expires,
+        # but this ensures we don't queue another walk)
 
     def press_sequence(self, buttons: list[str], delay: float = 0.1) -> bool:
         """

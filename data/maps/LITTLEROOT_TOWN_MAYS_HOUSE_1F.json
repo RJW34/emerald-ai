@@ -1,0 +1,176 @@
+{
+  "id": "LITTLEROOT_TOWN_MAYS_HOUSE_1F",
+  "name": "LittlerootTown_MaysHouse_1F",
+  "dimensions": {
+    "width": 11,
+    "height": 9
+  },
+  "mapType": "MAP_TYPE_INDOOR",
+  "weather": "WEATHER_NONE",
+  "music": "MUS_LITTLEROOT",
+  "flags": {
+    "allowCycling": false,
+    "allowRunning": false,
+    "allowEscaping": false,
+    "requiresFlash": false,
+    "showMapName": false
+  },
+  "connections": null,
+  "warps": [
+    {
+      "x": 1,
+      "y": 8,
+      "elevation": 0,
+      "destination": "LITTLEROOT_TOWN",
+      "destWarpId": 0
+    },
+    {
+      "x": 2,
+      "y": 8,
+      "elevation": 0,
+      "destination": "LITTLEROOT_TOWN",
+      "destWarpId": 0
+    },
+    {
+      "x": 2,
+      "y": 2,
+      "elevation": 0,
+      "destination": "LITTLEROOT_TOWN_MAYS_HOUSE_2F",
+      "destWarpId": 0
+    }
+  ],
+  "npcs": [
+    {
+      "x": 8,
+      "y": 6,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_MOM",
+      "movement": "face_left",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "localId": "LOCALID_PLAYERS_HOUSE_1F_MOM",
+      "script": "PlayersHouse_1F_EventScript_Mom",
+      "flag": "FLAG_HIDE_LITTLEROOT_TOWN_MAYS_HOUSE_MOM"
+    },
+    {
+      "x": 6,
+      "y": 5,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_VIGOROTH_FACING_AWAY",
+      "movement": "walk_in_place_up",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "script": "PlayersHouse_1F_EventScript_Vigoroth1",
+      "flag": "FLAG_HIDE_LITTLEROOT_TOWN_PLAYERS_HOUSE_VIGOROTH_1"
+    },
+    {
+      "x": 9,
+      "y": 3,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_VIGOROTH_CARRYING_BOX",
+      "movement": "walk_left_and_right",
+      "movementRange": {
+        "x": 3,
+        "y": 0
+      },
+      "script": "PlayersHouse_1F_EventScript_Vigoroth2",
+      "flag": "FLAG_HIDE_LITTLEROOT_TOWN_PLAYERS_HOUSE_VIGOROTH_2"
+    },
+    {
+      "x": 8,
+      "y": 7,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_WOMAN_4",
+      "movement": "face_left",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "localId": "LOCALID_RIVALS_HOUSE_1F_MOM",
+      "script": "RivalsHouse_1F_EventScript_RivalMom",
+      "flag": "FLAG_HIDE_LITTLEROOT_TOWN_MAYS_HOUSE_RIVAL_MOM"
+    },
+    {
+      "x": 5,
+      "y": 6,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_NORMAN",
+      "movement": "face_right",
+      "movementRange": {
+        "x": 1,
+        "y": 1
+      },
+      "localId": "LOCALID_PLAYERS_HOUSE_1F_DAD",
+      "flag": "FLAG_HIDE_PLAYERS_HOUSE_DAD"
+    },
+    {
+      "x": 9,
+      "y": 5,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_NINJA_BOY",
+      "movement": "wander_left_and_right",
+      "movementRange": {
+        "x": 1,
+        "y": 1
+      },
+      "script": "RivalsHouse_1F_EventScript_RivalSibling",
+      "flag": "FLAG_HIDE_LITTLEROOT_TOWN_MAYS_HOUSE_RIVAL_SIBLING"
+    },
+    {
+      "x": 2,
+      "y": 8,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_RIVAL_MAY_NORMAL",
+      "movement": "face_up",
+      "movementRange": {
+        "x": 1,
+        "y": 1
+      },
+      "localId": "LOCALID_RIVALS_HOUSE_1F_RIVAL",
+      "flag": "FLAG_HIDE_LITTLEROOT_TOWN_MAYS_HOUSE_MAY"
+    }
+  ],
+  "triggers": [
+    {
+      "x": 2,
+      "y": 8,
+      "elevation": 0,
+      "type": "trigger",
+      "var": "VAR_LITTLEROOT_INTRO_STATE",
+      "varValue": 4,
+      "script": "LittlerootTown_MaysHouse_1F_EventScript_GoSeeRoom"
+    },
+    {
+      "x": 1,
+      "y": 3,
+      "elevation": 0,
+      "type": "trigger",
+      "var": "VAR_LITTLEROOT_RIVAL_STATE",
+      "varValue": 2,
+      "script": "LittlerootTown_MaysHouse_1F_EventScript_MeetRival0"
+    },
+    {
+      "x": 2,
+      "y": 4,
+      "elevation": 0,
+      "type": "trigger",
+      "var": "VAR_LITTLEROOT_RIVAL_STATE",
+      "varValue": 2,
+      "script": "LittlerootTown_MaysHouse_1F_EventScript_MeetRival1"
+    },
+    {
+      "x": 3,
+      "y": 3,
+      "elevation": 0,
+      "type": "trigger",
+      "var": "VAR_LITTLEROOT_RIVAL_STATE",
+      "varValue": 2,
+      "script": "LittlerootTown_MaysHouse_1F_EventScript_MeetRival2"
+    }
+  ],
+  "bgEvents": []
+}

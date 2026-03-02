@@ -1,0 +1,268 @@
+{
+  "id": "LITTLEROOT_TOWN",
+  "name": "LittlerootTown",
+  "dimensions": {
+    "width": 20,
+    "height": 20
+  },
+  "mapType": "MAP_TYPE_TOWN",
+  "weather": "WEATHER_SUNNY",
+  "music": "MUS_LITTLEROOT",
+  "flags": {
+    "allowCycling": true,
+    "allowRunning": true,
+    "allowEscaping": false,
+    "requiresFlash": false,
+    "showMapName": true
+  },
+  "connections": {
+    "north": {
+      "map": "ROUTE101",
+      "offset": 0
+    }
+  },
+  "warps": [
+    {
+      "x": 14,
+      "y": 8,
+      "elevation": 0,
+      "destination": "LITTLEROOT_TOWN_MAYS_HOUSE_1F",
+      "destWarpId": 1
+    },
+    {
+      "x": 5,
+      "y": 8,
+      "elevation": 0,
+      "destination": "LITTLEROOT_TOWN_BRENDANS_HOUSE_1F",
+      "destWarpId": 1
+    },
+    {
+      "x": 7,
+      "y": 16,
+      "elevation": 0,
+      "destination": "LITTLEROOT_TOWN_PROFESSOR_BIRCHS_LAB",
+      "destWarpId": 0
+    }
+  ],
+  "npcs": [
+    {
+      "x": 16,
+      "y": 10,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_TWIN",
+      "movement": "wander_around",
+      "movementRange": {
+        "x": 1,
+        "y": 2
+      },
+      "localId": "LOCALID_LITTLEROOT_TWIN",
+      "script": "LittlerootTown_EventScript_Twin"
+    },
+    {
+      "x": 12,
+      "y": 13,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_FAT_MAN",
+      "movement": "wander_around",
+      "movementRange": {
+        "x": 2,
+        "y": 1
+      },
+      "script": "LittlerootTown_EventScript_FatMan",
+      "flag": "FLAG_HIDE_LITTLEROOT_TOWN_FAT_MAN"
+    },
+    {
+      "x": 14,
+      "y": 17,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_BOY_2",
+      "movement": "wander_around",
+      "movementRange": {
+        "x": 2,
+        "y": 1
+      },
+      "script": "LittlerootTown_EventScript_Boy"
+    },
+    {
+      "x": 5,
+      "y": 8,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_MOM",
+      "movement": "face_up",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "localId": "LOCALID_LITTLEROOT_MOM",
+      "script": "LittlerootTown_EventScript_Mom",
+      "flag": "FLAG_HIDE_LITTLEROOT_TOWN_MOM_OUTSIDE"
+    },
+    {
+      "x": 2,
+      "y": 10,
+      "elevation": 4,
+      "graphicsId": "OBJ_EVENT_GFX_TRUCK",
+      "movement": "face_right",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "flag": "FLAG_HIDE_LITTLEROOT_TOWN_BRENDANS_HOUSE_TRUCK"
+    },
+    {
+      "x": 11,
+      "y": 10,
+      "elevation": 4,
+      "graphicsId": "OBJ_EVENT_GFX_TRUCK",
+      "movement": "face_right",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "flag": "FLAG_HIDE_LITTLEROOT_TOWN_MAYS_HOUSE_TRUCK"
+    },
+    {
+      "x": 13,
+      "y": 10,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_VAR_0",
+      "movement": "face_up",
+      "movementRange": {
+        "x": 1,
+        "y": 1
+      },
+      "localId": "LOCALID_LITTLEROOT_RIVAL",
+      "flag": "FLAG_HIDE_LITTLEROOT_TOWN_RIVAL"
+    },
+    {
+      "x": 14,
+      "y": 10,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_PROF_BIRCH",
+      "movement": "face_up",
+      "movementRange": {
+        "x": 1,
+        "y": 1
+      },
+      "localId": "LOCALID_LITTLEROOT_BIRCH",
+      "flag": "FLAG_HIDE_LITTLEROOT_TOWN_BIRCH"
+    }
+  ],
+  "triggers": [
+    {
+      "x": 10,
+      "y": 1,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_LITTLEROOT_TOWN_STATE",
+      "varValue": 0,
+      "script": "LittlerootTown_EventScript_NeedPokemonTriggerLeft"
+    },
+    {
+      "x": 11,
+      "y": 1,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_LITTLEROOT_TOWN_STATE",
+      "varValue": 0,
+      "script": "LittlerootTown_EventScript_NeedPokemonTriggerRight"
+    },
+    {
+      "x": 11,
+      "y": 1,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_LITTLEROOT_TOWN_STATE",
+      "varValue": 1,
+      "script": "LittlerootTown_EventScript_GoSaveBirchTrigger"
+    },
+    {
+      "x": 8,
+      "y": 9,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_LITTLEROOT_TOWN_STATE",
+      "varValue": 3,
+      "script": "LittlerootTown_EventScript_GiveRunningShoesTrigger4"
+    },
+    {
+      "x": 9,
+      "y": 9,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_LITTLEROOT_TOWN_STATE",
+      "varValue": 3,
+      "script": "LittlerootTown_EventScript_GiveRunningShoesTrigger5"
+    },
+    {
+      "x": 10,
+      "y": 9,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_LITTLEROOT_TOWN_STATE",
+      "varValue": 3,
+      "script": "LittlerootTown_EventScript_GiveRunningShoesTrigger2"
+    },
+    {
+      "x": 11,
+      "y": 9,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_LITTLEROOT_TOWN_STATE",
+      "varValue": 3,
+      "script": "LittlerootTown_EventScript_GiveRunningShoesTrigger3"
+    },
+    {
+      "x": 10,
+      "y": 2,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_LITTLEROOT_TOWN_STATE",
+      "varValue": 3,
+      "script": "LittlerootTown_EventScript_GiveRunningShoesTrigger0"
+    },
+    {
+      "x": 11,
+      "y": 2,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_LITTLEROOT_TOWN_STATE",
+      "varValue": 3,
+      "script": "LittlerootTown_EventScript_GiveRunningShoesTrigger1"
+    }
+  ],
+  "bgEvents": [
+    {
+      "x": 15,
+      "y": 13,
+      "elevation": 0,
+      "type": "sign",
+      "script": "LittlerootTown_EventScript_TownSign",
+      "playerFacingDir": "BG_EVENT_PLAYER_FACING_ANY"
+    },
+    {
+      "x": 6,
+      "y": 17,
+      "elevation": 0,
+      "type": "sign",
+      "script": "LittlerootTown_EventScript_BirchsLabSign",
+      "playerFacingDir": "BG_EVENT_PLAYER_FACING_ANY"
+    },
+    {
+      "x": 7,
+      "y": 8,
+      "elevation": 3,
+      "type": "sign",
+      "script": "LittlerootTown_EventScript_BrendansHouseSign",
+      "playerFacingDir": "BG_EVENT_PLAYER_FACING_ANY"
+    },
+    {
+      "x": 12,
+      "y": 8,
+      "elevation": 3,
+      "type": "sign",
+      "script": "LittlerootTown_EventScript_MaysHouseSign",
+      "playerFacingDir": "BG_EVENT_PLAYER_FACING_ANY"
+    }
+  ]
+}

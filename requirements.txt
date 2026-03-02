@@ -1,1 +1,26 @@
+# Emerald AI - Python Dependencies
+#
+# Install with: pip install -r requirements.txt
+
+# =============================================================================
+# Core Dependencies
+# =============================================================================
+
+# WebSocket communication with BizHawk
+websockets>=12.0
+
+# =============================================================================
+# Learning Module Dependencies
+# =============================================================================
+
+# Vision API for autonomous learning (screenshot analysis)
+anthropic>=0.18.0
+
+# Environment variable loading
+python-dotenv>=1.0.0
+
+# =============================================================================
+# Testing
+# =============================================================================
+
 pytest>=7.0

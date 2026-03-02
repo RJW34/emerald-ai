@@ -1,0 +1,196 @@
+{
+  "id": "OLDALE_TOWN",
+  "name": "OldaleTown",
+  "dimensions": {
+    "width": 20,
+    "height": 20
+  },
+  "mapType": "MAP_TYPE_TOWN",
+  "weather": "WEATHER_SUNNY",
+  "music": "MUS_OLDALE",
+  "flags": {
+    "allowCycling": true,
+    "allowRunning": true,
+    "allowEscaping": false,
+    "requiresFlash": false,
+    "showMapName": true
+  },
+  "connections": {
+    "north": {
+      "map": "ROUTE103",
+      "offset": 0
+    },
+    "south": {
+      "map": "ROUTE101",
+      "offset": 0
+    },
+    "west": {
+      "map": "ROUTE102",
+      "offset": 0
+    }
+  },
+  "warps": [
+    {
+      "x": 5,
+      "y": 7,
+      "elevation": 0,
+      "destination": "OLDALE_TOWN_HOUSE1",
+      "destWarpId": 0
+    },
+    {
+      "x": 15,
+      "y": 16,
+      "elevation": 0,
+      "destination": "OLDALE_TOWN_HOUSE2",
+      "destWarpId": 0
+    },
+    {
+      "x": 6,
+      "y": 16,
+      "elevation": 0,
+      "destination": "OLDALE_TOWN_POKEMON_CENTER_1F",
+      "destWarpId": 0
+    },
+    {
+      "x": 14,
+      "y": 6,
+      "elevation": 0,
+      "destination": "OLDALE_TOWN_MART",
+      "destWarpId": 0
+    }
+  ],
+  "npcs": [
+    {
+      "x": 16,
+      "y": 11,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_GIRL_3",
+      "movement": "face_left",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "script": "OldaleTown_EventScript_Girl"
+    },
+    {
+      "x": 13,
+      "y": 7,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_MART_EMPLOYEE",
+      "movement": "face_down",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "localId": "LOCALID_OLDALE_MART_EMPLOYEE",
+      "script": "OldaleTown_EventScript_MartEmployee"
+    },
+    {
+      "x": 8,
+      "y": 9,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_MANIAC",
+      "movement": "face_right",
+      "movementRange": {
+        "x": 0,
+        "y": 0
+      },
+      "localId": "LOCALID_FOOTPRINTS_MAN",
+      "script": "OldaleTown_EventScript_FootprintsMan"
+    },
+    {
+      "x": 11,
+      "y": 19,
+      "elevation": 3,
+      "graphicsId": "OBJ_EVENT_GFX_VAR_0",
+      "movement": "face_up",
+      "movementRange": {
+        "x": 1,
+        "y": 1
+      },
+      "localId": "LOCALID_OLDALE_RIVAL",
+      "script": "OldaleTown_EventScript_Rival",
+      "flag": "FLAG_HIDE_OLDALE_TOWN_RIVAL"
+    }
+  ],
+  "triggers": [
+    {
+      "x": 0,
+      "y": 10,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_OLDALE_TOWN_STATE",
+      "varValue": 0,
+      "script": "OldaleTown_EventScript_BlockedPath"
+    },
+    {
+      "x": 8,
+      "y": 19,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_OLDALE_RIVAL_STATE",
+      "varValue": 1,
+      "script": "OldaleTown_EventScript_RivalTrigger1"
+    },
+    {
+      "x": 9,
+      "y": 19,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_OLDALE_RIVAL_STATE",
+      "varValue": 1,
+      "script": "OldaleTown_EventScript_RivalTrigger2"
+    },
+    {
+      "x": 10,
+      "y": 19,
+      "elevation": 3,
+      "type": "trigger",
+      "var": "VAR_OLDALE_RIVAL_STATE",
+      "varValue": 1,
+      "script": "OldaleTown_EventScript_RivalTrigger3"
+    }
+  ],
+  "bgEvents": [
+    {
+      "x": 11,
+      "y": 9,
+      "elevation": 0,
+      "type": "sign",
+      "script": "OldaleTown_EventScript_TownSign",
+      "playerFacingDir": "BG_EVENT_PLAYER_FACING_ANY"
+    },
+    {
+      "x": 7,
+      "y": 16,
+      "elevation": 0,
+      "type": "sign",
+      "script": "Common_EventScript_ShowPokemonCenterSign",
+      "playerFacingDir": "BG_EVENT_PLAYER_FACING_NORTH"
+    },
+    {
+      "x": 15,
+      "y": 6,
+      "elevation": 0,
+      "type": "sign",
+      "script": "Common_EventScript_ShowPokemartSign",
+      "playerFacingDir": "BG_EVENT_PLAYER_FACING_NORTH"
+    },
+    {
+      "x": 8,
+      "y": 16,
+      "elevation": 0,
+      "type": "sign",
+      "script": "Common_EventScript_ShowPokemonCenterSign",
+      "playerFacingDir": "BG_EVENT_PLAYER_FACING_NORTH"
+    },
+    {
+      "x": 16,
+      "y": 6,
+      "elevation": 0,
+      "type": "sign",
+      "script": "Common_EventScript_ShowPokemartSign",
+      "playerFacingDir": "BG_EVENT_PLAYER_FACING_NORTH"
+    }
+  ]
+}
