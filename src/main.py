@@ -173,8 +173,9 @@ class EmeraldAI:
         else:
             self._ticks_in_state += 1
         
-        # Stuck detection (skip in OVERWORLD and during new game flow)
-        if self._ticks_in_state > 60 and state != PokemonGen3State.OVERWORLD and not self._in_new_game_flow:
+        # Stuck detection (skip in OVERWORLD, during new game flow, and during intro)
+        in_intro = not self._intro_complete and not self.intro_handler.is_complete
+        if self._ticks_in_state > 60 and state != PokemonGen3State.OVERWORLD and not self._in_new_game_flow and not in_intro:
             self._handle_stuck()
         
         # Dispatch to handler
