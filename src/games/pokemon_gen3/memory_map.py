@@ -352,14 +352,15 @@ class PokemonGen3Memory:
     MAP_PACIFIDLOG_TOWN: ClassVar[tuple] = (1, 6)
 
     # Routes
-    MAP_ROUTE_101: ClassVar[tuple] = (25, 16)
-    MAP_ROUTE_102: ClassVar[tuple] = (25, 17)
-    MAP_ROUTE_103: ClassVar[tuple] = (25, 18)
+    # Routes (map group 0 = outdoor/towns/routes)
+    MAP_ROUTE_101: ClassVar[tuple] = (0, 16)
+    MAP_ROUTE_102: ClassVar[tuple] = (0, 17)
+    MAP_ROUTE_103: ClassVar[tuple] = (0, 18)
 
-    # Interior maps (map group 25 = Special/Indoor)
+    # Interior maps (map group 1 = Littleroot indoor, 25 = special)
     MAP_INSIDE_TRUCK: ClassVar[tuple] = (25, 40)       # Moving truck interior
-    MAP_PLAYER_HOUSE_1F: ClassVar[tuple] = (25, 5)     # Player's house 1st floor
-    MAP_PLAYER_HOUSE_2F: ClassVar[tuple] = (25, 6)     # Player's house 2nd floor
+    MAP_PLAYER_HOUSE_1F: ClassVar[tuple] = (1, 0)      # Brendan's House 1F
+    MAP_PLAYER_HOUSE_2F: ClassVar[tuple] = (1, 1)      # Brendan's House 2F
 
 
 # =============================================================================

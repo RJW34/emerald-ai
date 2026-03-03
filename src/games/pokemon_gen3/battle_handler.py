@@ -296,6 +296,7 @@ class PokemonGen3BattleHandler:
         is_trainer = bool(battle_flags & Mem.BATTLE_TYPE_TRAINER)
         is_safari = bool(battle_flags & Mem.BATTLE_TYPE_SAFARI)
         is_tower = bool(battle_flags & Mem.BATTLE_TYPE_BATTLE_TOWER)
+        is_first_battle = bool(battle_flags & Mem.BATTLE_TYPE_FIRST_BATTLE)
 
         # Read player's Pokemon
         player_pokemon = [self._read_battle_pokemon(0)]
@@ -323,6 +324,9 @@ class PokemonGen3BattleHandler:
         elif weather_val & 0x80:  # Hail bit
             weather = Weather.HAIL
 
+        # Can't run from: trainer battles, safari, or first battle (Birch rescue)
+        can_run = is_wild and not is_safari and not is_first_battle
+
         self._battle_state = BattleState(
             is_wild=is_wild,
             is_double=is_double,
@@ -330,7 +334,7 @@ class PokemonGen3BattleHandler:
             player_pokemon=[p for p in player_pokemon if p],
             enemy_pokemon=[p for p in enemy_pokemon if p],
             weather=weather,
-            can_run=is_wild and not is_safari,
+            can_run=can_run,
             is_safari=is_safari,
             is_battle_tower=is_tower,
         )
