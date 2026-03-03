@@ -12,9 +12,11 @@ Usage:
 """
 
 import argparse
+import json
 import logging
 import sys
 import time
+import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -29,6 +31,8 @@ from src.games.pokemon_gen3.battle_handler import (
 )
 from src.ai.battle_ai import BattleAI, BattleContext, BattleStrategy
 from src.tracking.completion_tracker import CompletionTracker
+from src.games.pokemon_gen3.intro_handler import IntroHandler
+from src.games.pokemon_gen3.progression_handler import ProgressionHandler, GamePhase
 
 logging.basicConfig(
     level=logging.INFO,
@@ -90,6 +94,11 @@ class EmeraldAI:
         self._in_new_game_flow = False
         self._new_game_step = 0
         self._new_game_input_delay = 0
+        
+        # Intro and progression handlers
+        self.intro_handler = IntroHandler(self.state_detector, self.input)
+        self.progression = ProgressionHandler(self.state_detector, self.input)
+        self._intro_complete = False
 
     def _set_strategy(self, strategy: str):
         strategy_map = {
@@ -182,6 +191,10 @@ class EmeraldAI:
         elif state == PokemonGen3State.UNKNOWN:
             self._handle_unknown()
         
+        # Push OBS overlay update (every 5 ticks ≈ 2.5s)
+        if self._ticks_total % 5 == 0:
+            self._push_obs_update()
+
         # Periodic progress update (every 30 ticks)
         if self._ticks_total % 30 == 0:
             progress = self.tracker.update()
@@ -388,7 +401,18 @@ class EmeraldAI:
             self.input.tap("A")  # Confirm switch
 
     def _handle_dialogue(self):
-        """Handle dialogue/text boxes - press A to advance."""
+        """Handle dialogue/text boxes - press A to advance.
+        
+        During intro phases, we also let the intro handler know
+        so it can track dialogue-based progression.
+        """
+        # If intro handler is active, let it handle dialogue
+        # (it knows about intro-specific dialogue flows)
+        if not self._intro_complete and not self.intro_handler.is_complete:
+            self.intro_handler.tick()
+            return
+        
+        # Normal dialogue — press A to advance
         self.input.tap("A")
 
     def _configure_game_settings(self):
@@ -467,13 +491,16 @@ class EmeraldAI:
 
     def _handle_overworld(self):
         """
-        Handle overworld navigation using random walk with direction persistence.
+        Handle overworld navigation using progression directives + random walk fallback.
         
         Strategy:
-        - Pick a random direction and walk in it for several ticks
-        - Check if position is changing (detect walls/obstacles)
-        - If stuck, immediately pick a new direction
-        - Walking randomly will trigger wild battles naturally
+        1. If intro isn't complete, delegate to intro handler
+        2. Detect current game phase from progression handler
+        3. Follow phase-specific movement directives (walk north to Route 101, etc.)
+        4. Fall back to random walk with direction persistence if no directive
+        
+        Uses walk() for movement (hold direction for multiple frames) instead
+        of tap() which only registers a single frame of input.
         """
         import random
         
@@ -490,9 +517,26 @@ class EmeraldAI:
         pos = self.state_detector.get_player_position()
         map_loc = self.state_detector.get_map_location()
         
+        # --- INTRO HANDLER ---
+        # If intro isn't complete, let the intro handler manage navigation
+        if not self._intro_complete:
+            if not self.intro_handler.is_complete:
+                self.intro_handler.tick()
+                return
+            else:
+                logger.info("=" * 50)
+                logger.info("INTRO HANDLER COMPLETE — switching to progression")
+                logger.info("=" * 50)
+                self._intro_complete = True
+        
+        # --- PROGRESSION HANDLER ---
+        # Detect current game phase and get movement directive
+        phase = self.progression.detect_phase()
+        directive = self.progression.get_directive()
+        
         # Log position periodically
         if self._ticks_in_state % 20 == 0:
-            logger.debug(f"Overworld: pos={pos}, map={map_loc}")
+            logger.debug(f"Overworld: pos={pos}, map={map_loc}, phase={phase.name}")
         
         # Check if position has changed since last tick
         if pos == self._last_position:
@@ -501,7 +545,32 @@ class EmeraldAI:
             self._position_stuck_counter = 0
             self._last_position = pos
         
-        # If stuck in same position for 3+ ticks, we hit a wall - change direction immediately
+        # If we have a directive, follow it
+        if directive is not None:
+            if self._ticks_in_state % 30 == 0:
+                logger.info(f"Directive: {directive.description} ({directive.direction})")
+            
+            # If stuck in same position for 5+ ticks with a directive, try alternate paths
+            if self._position_stuck_counter >= 5:
+                logger.debug(f"Stuck at {pos} while following directive, trying alternate")
+                # Try perpendicular direction to get around obstacle
+                perpendicular = {
+                    "Up": ["Left", "Right"],
+                    "Down": ["Left", "Right"],
+                    "Left": ["Up", "Down"],
+                    "Right": ["Up", "Down"],
+                }
+                alt_dir = random.choice(perpendicular.get(directive.direction, ["Up", "Down"]))
+                self.input.walk(alt_dir)
+                self._position_stuck_counter = 0
+            else:
+                self.input.walk(directive.direction)
+            return
+        
+        # --- RANDOM WALK FALLBACK ---
+        # No directive — explore randomly (for free roam or unknown phases)
+        
+        # If stuck in same position for 3+ ticks, we hit a wall - change direction
         if self._position_stuck_counter >= 3:
             logger.debug(f"Hit obstacle at {pos}, changing direction")
             self._current_direction = None
@@ -512,12 +581,12 @@ class EmeraldAI:
         if self._current_direction is None or self._direction_persist_ticks >= self._direction_persist_target:
             # Pick new direction and duration
             self._current_direction = random.choice(["Up", "Down", "Left", "Right"])
-            self._direction_persist_target = random.randint(5, 15)  # Walk 5-15 ticks in this direction
+            self._direction_persist_target = random.randint(5, 15)
             self._direction_persist_ticks = 0
-            logger.debug(f"New direction: {self._current_direction} for {self._direction_persist_target} ticks")
+            logger.debug(f"Random walk: {self._current_direction} for {self._direction_persist_target} ticks")
         
-        # Move in current direction
-        self.input.tap(self._current_direction)
+        # Move in current direction using walk() (hold for multiple frames)
+        self.input.walk(self._current_direction)
         self._direction_persist_ticks += 1
 
     def _handle_unknown(self):
@@ -544,6 +613,36 @@ class EmeraldAI:
             direction = random.choice(["Up", "Down", "Left", "Right"])
             self.input.tap(direction)
             self._stuck_counter = 0
+
+    def _push_obs_update(self):
+        """Push current state to the OBS overlay bridge (fire-and-forget)."""
+        progress = self.tracker.progress
+        if progress and progress.party.count > 0:
+            progress_text = (
+                f"Badges: {progress.badges.count}/8 | "
+                f"Pokedex: {progress.pokedex.caught} caught | "
+                f"Party Lv: {progress.party.highest_level} | "
+                f"Time: {progress.playtime}"
+            )
+        else:
+            progress_text = "Waiting for data..."
+
+        payload = json.dumps({
+            "objective": f"State: {self._last_state.name}",
+            "thought": f"Ticks: {self._ticks_total} | Stuck: {self._stuck_counter}",
+            "progress": progress_text,
+            "script": f"Strategy: {self.battle_ai.strategy.name}",
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            "http://127.0.0.1:8765/update",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            urllib.request.urlopen(req, timeout=2)
+        except Exception:
+            pass  # Bridge may not be running; don't disrupt gameplay
 
     def _print_stats(self):
         """Print session statistics."""

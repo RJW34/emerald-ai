@@ -253,6 +253,11 @@ class BizHawkSocketClient:
                 logger.error(f"Invalid hex data: {hex_data[:40]}...")
         return bytes(length)
 
+    def write8(self, address: int, value: int) -> bool:
+        """Write a single byte to memory."""
+        response = self._send_command(f"WRITE8 {address} {value}")
+        return response is not None and response.startswith("OK")
+
     # -------------------------------------------------------------------------
     # Bulk State Read (socket-only optimization)
     # -------------------------------------------------------------------------
