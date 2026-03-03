@@ -413,8 +413,8 @@ class EmeraldAI:
             self.intro_handler.tick()
             return
         
-        # Normal dialogue — press A to advance
-        self.input.tap("A")
+        # Normal dialogue — turbo A to advance quickly
+        self.input.turbo_a()
 
     def _configure_game_settings(self):
         """

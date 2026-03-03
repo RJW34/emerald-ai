@@ -122,6 +122,27 @@ class InputController:
         # (BizHawk will stop holding after the hold duration expires,
         # but this ensures we don't queue another walk)
 
+    def turbo_a(self, count: int = 3, delay: float = 0.03) -> bool:
+        """
+        Rapidly press A multiple times for advancing dialogue.
+
+        Uses tight timing (~0.03s apart) to quickly advance through
+        text boxes and NPC dialogue without missing inputs.
+
+        Args:
+            count: Number of A presses (default 3)
+            delay: Delay between presses in seconds (default 0.03)
+
+        Returns:
+            True if all inputs were sent successfully
+        """
+        success = True
+        for _ in range(count):
+            if not self.tap("A"):
+                success = False
+            time.sleep(delay)
+        return success
+
     def press_sequence(self, buttons: list[str], delay: float = 0.1) -> bool:
         """
         Press a sequence of buttons with delay between each.
