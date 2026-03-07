@@ -243,6 +243,11 @@ class BizHawkSocketClient:
         result = self._parse_response(response)
         return result if result is not None else 0
 
+    def write8(self, address: int, value: int) -> bool:
+        """Write a single byte to memory."""
+        response = self._send_command(f"WRITE8 {address} {value}")
+        return response is not None and response.startswith("OK")
+
     def read_range(self, address: int, length: int) -> bytes:
         response = self._send_command(f"READRANGE {address} {length}")
         if response and response.startswith("OK "):
