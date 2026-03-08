@@ -33,7 +33,7 @@ class mGBAClient:
     def __init__(
         self,
         host: str = "192.168.1.40",
-        port: int = 8785,
+        port: int = 8787,
         timeout: float = 5.0,
     ):
         self.host = host
@@ -313,3 +313,31 @@ class mGBAClient:
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.close()
+
+
+    # -------------------------------------------------------------------------
+    # Memory Write
+    # -------------------------------------------------------------------------
+
+    def write8(self, address: int, value: int) -> bool:
+        """Write a single byte to GBA memory."""
+        resp = self._send({"action": "write8", "addr": address, "value": value})
+        return resp is not None and resp.get("ok", False)
+
+    def write16(self, address: int, value: int) -> bool:
+        """Write 2 bytes (u16) to GBA memory."""
+        resp = self._send({"action": "write16", "addr": address, "value": value})
+        return resp is not None and resp.get("ok", False)
+
+    def write32(self, address: int, value: int) -> bool:
+        """Write 4 bytes (u32) to GBA memory."""
+        resp = self._send({"action": "write32", "addr": address, "value": value})
+        return resp is not None and resp.get("ok", False)
+
+    # -------------------------------------------------------------------------
+    # Game Info
+    # -------------------------------------------------------------------------
+
+    def get_game_title(self) -> str:
+        """Get the game title. Returns hardcoded value for Emerald."""
+        return "POKEMON EMER"
