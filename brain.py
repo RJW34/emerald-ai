@@ -29,6 +29,12 @@ from typing import Optional
 import urllib.request
 import urllib.error
 
+# Screenshot reporter (optional)
+try:
+    from src.reporting.screenshot_reporter import ScreenshotReporter
+except ImportError:
+    ScreenshotReporter = None
+
 # ── Configuration ────────────────────────────────────────────
 
 PROJECT_DIR = Path(__file__).parent
@@ -46,6 +52,10 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-6-20250514")
 
 HISTORY_DEPTH = 12
+
+# Discord screenshot reporter config
+DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN")
+DISCORD_CHANNEL_ID = os.environ.get("DISCORD_CHANNEL_ID", "1475080042542268500")
 
 # Map names for Emerald
 MAP_NAMES = {
@@ -193,6 +203,26 @@ class LuaBridge:
     def screenshot(self, path: str = "/tmp/emerald_screen.png") -> bool:
         resp = self.send_command({"cmd": "screenshot", "path": path})
         return resp is not None and resp.get("ok", False)
+
+    def _send(self, cmd: dict) -> Optional[dict]:
+        """Alias for send_command, used by ScreenshotReporter."""
+        return self.send_command(cmd)
+
+    def screenshot_b64(self) -> Optional[str]:
+        """Take screenshot via Lua bridge and return base64-encoded PNG."""
+        import base64 as _b64
+        temp_path = "/tmp/_reporter_screenshot.png"
+        resp = self.send_command({"cmd": "screenshot", "path": temp_path})
+        if not resp or not resp.get("ok"):
+            return None
+        file_resp = self.send_command({"cmd": "readfile", "path": temp_path})
+        if not file_resp or not file_resp.get("data"):
+            return None
+        try:
+            file_bytes = bytes.fromhex(file_resp["data"])
+            return _b64.b64encode(file_bytes).decode("ascii")
+        except (ValueError, TypeError):
+            return None
 
 
 # ── Game State Formatting ────────────────────────────────────
@@ -490,7 +520,21 @@ def run_brain(tick_rate: float = 2.0, dry_run: bool = False, once: bool = False)
         log.error("Lua bridge ping failed")
         return
 
-    history = ConversationHistory(max_entries=HISTORY_DEPTH)
+    # Screenshot reporter
+    reporter = None
+    if ScreenshotReporter is not None and DISCORD_BOT_TOKEN:
+        try:
+            reporter = ScreenshotReporter(
+                client=bridge,
+                channel_id=DISCORD_CHANNEL_ID,
+                token=DISCORD_BOT_TOKEN,
+                game_name="Pokemon Emerald",
+            )
+            log.info(f"Screenshot reporter enabled -> channel {DISCORD_CHANNEL_ID}")
+        except Exception as e:
+            log.warning(f"Screenshot reporter init failed: {e}")
+
+        history = ConversationHistory(max_entries=HISTORY_DEPTH)
     decision_count = 0
     error_streak = 0
 
@@ -541,6 +585,13 @@ def run_brain(tick_rate: float = 2.0, dry_run: bool = False, once: bool = False)
                      f"party={state.get('party_count', 0)} "
                      f"scene={scene}")
 
+            # Screenshot reporter: check for events
+            if reporter:
+                try:
+                    reporter.check(state)
+                except Exception:
+                    pass  # Never crash the game loop for reporting
+
             # 3. Ask Claude
             action = call_claude(state_text, history)
             if not action:
@@ -580,6 +631,7 @@ def run_brain(tick_rate: float = 2.0, dry_run: bool = False, once: bool = False)
 
 
 def main():
+    global LUA_HOST, LUA_PORT
     parser = argparse.ArgumentParser(description="Emerald Brain v3 — Lua-native Claude loop")
     parser.add_argument("--tick", type=float, default=TICK_RATE, help="Seconds between decisions")
     parser.add_argument("--dry-run", action="store_true", help="Print without executing")
@@ -588,7 +640,6 @@ def main():
     parser.add_argument("--port", type=int, default=LUA_PORT, help="Lua bridge port")
     args = parser.parse_args()
 
-    global LUA_HOST, LUA_PORT
     LUA_HOST = args.host
     LUA_PORT = args.port
 

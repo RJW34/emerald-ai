@@ -71,15 +71,17 @@ class IntroHandler:
             handler.tick()
     """
 
-    # Map IDs for intro locations
-    # Player house (Brendan's house in Littleroot)
-    MAP_HOUSE_2F = (1, 1)      # Brendan's House 2F
-    MAP_HOUSE_1F = (1, 0)      # Brendan's House 1F
-    MAP_RIVAL_HOUSE_1F = (1, 2)  # May's House 1F
-    MAP_RIVAL_HOUSE_2F = (1, 3)  # May's House 2F
-    MAP_LITTLEROOT = (0, 9)    # Littleroot Town
-    MAP_ROUTE_101 = (0, 16)    # Route 101
-    MAP_BIRCH_LAB = (1, 4)     # Professor Birch's Lab
+    # Map IDs for intro locations (from Emerald ROM)
+    MAP_INSIDE_TRUCK = (25, 40)   # Moving truck interior
+    # Indoor maps in Littleroot (group 25 in pokeemerald):
+    # These will be auto-detected and logged on first encounter
+    MAP_HOUSE_2F = None           # Player's House 2F - detected dynamically
+    MAP_HOUSE_1F = None           # Player's House 1F - detected dynamically
+    MAP_RIVAL_HOUSE_1F = None     # Rival's House 1F - detected dynamically
+    MAP_RIVAL_HOUSE_2F = None     # Rival's House 2F - detected dynamically
+    MAP_LITTLEROOT = (0, 9)       # Littleroot Town (map group 0, map 9)
+    MAP_ROUTE_101 = (0, 16)       # Route 101 (confirmed from memory_map)
+    MAP_BIRCH_LAB = None          # Professor Birch's Lab - detected dynamically
 
     def __init__(
         self,
@@ -153,29 +155,63 @@ class IntroHandler:
         self._last_map = map_loc
 
     def _detect_phase(self, map_loc: tuple[int, int]) -> None:
-        """Detect current intro phase from map location."""
-        if map_loc == self.MAP_HOUSE_2F:
-            self._phase = IntroPhase.HOUSE_2F
-        elif map_loc == self.MAP_HOUSE_1F:
-            self._phase = IntroPhase.HOUSE_1F
-        elif map_loc == self.MAP_LITTLEROOT:
+        """Detect current intro phase from map location.
+        
+        Uses known map IDs where available, with robust fallback for
+        unknown indoor maps during the Emerald intro sequence.
+        """
+        # Check for truck
+        if map_loc == self.MAP_INSIDE_TRUCK:
+            self._phase = IntroPhase.IN_TRUCK
+            return
+            
+        # Check for Littleroot Town (outdoor)
+        if map_loc == self.MAP_LITTLEROOT:
             if self._visited_rival_house:
                 self._phase = IntroPhase.HEADING_TO_ROUTE
             else:
                 self._phase = IntroPhase.LITTLEROOT_OUTSIDE
             self._littleroot_visits += 1
-        elif map_loc in (self.MAP_RIVAL_HOUSE_1F, self.MAP_RIVAL_HOUSE_2F):
-            self._phase = IntroPhase.RIVAL_HOUSE
-            self._visited_rival_house = True
-        elif map_loc == self.MAP_ROUTE_101:
+            return
+            
+        # Check for Route 101
+        if map_loc == self.MAP_ROUTE_101:
             self._phase = IntroPhase.ROUTE_101
-        elif map_loc == self.MAP_BIRCH_LAB:
-            # In the lab = intro is complete (post-battle, getting Pokedex)
-            self._phase = IntroPhase.INTRO_COMPLETE
-        else:
-            # Unknown indoor map = probably still in truck or early intro
-            if self._phase == IntroPhase.UNKNOWN:
-                self._phase = IntroPhase.IN_TRUCK
+            return
+            
+        # For indoor maps during intro (high group numbers like 25+),
+        # detect phase by the sequence of events rather than exact map IDs
+        group, num = map_loc
+        if group >= 4:  # Indoor map
+            # Track map transitions during intro
+            if self._phase == IntroPhase.IN_TRUCK and map_loc != self.MAP_INSIDE_TRUCK:
+                # Just left the truck -> must be in house 2F (bedroom)
+                logger.info(f"Detected Player House 2F at map {map_loc}")
+                self._phase = IntroPhase.HOUSE_2F
+                return
+            elif self._phase == IntroPhase.HOUSE_2F and map_loc != self._last_map:
+                # Left bedroom -> downstairs (1F)
+                logger.info(f"Detected Player House 1F at map {map_loc}")
+                self._phase = IntroPhase.HOUSE_1F
+                return
+            elif self._phase in (IntroPhase.LITTLEROOT_OUTSIDE, IntroPhase.HEADING_TO_ROUTE):
+                if not self._visited_rival_house:
+                    # Entered a building from Littleroot before visiting rival
+                    logger.info(f"Detected Rival's House at map {map_loc}")
+                    self._phase = IntroPhase.RIVAL_HOUSE
+                    self._visited_rival_house = True
+                    return
+                else:
+                    # Entered a building after visiting rival.
+                    # Do NOT mark complete here — could be Birch's lab or just an indoor cutscene.
+                    # Only party_count > 0 (checked at top of tick()) marks true completion.
+                    logger.info(f"Intro: indoor map {map_loc} after rival visit (likely Birch lab) — pressing A")
+                    # Stay in HEADING_TO_ROUTE; _handle_phase will press A through any dialogue
+                    return
+        
+        # Unknown map - log periodically and stay in current phase
+        if self._tick_count % 30 == 0:
+            logger.info(f"Intro: unknown map {map_loc}, staying in phase {self._phase.name}")
 
     def _handle_phase(self, map_loc: tuple[int, int]) -> None:
         """Handle the current intro phase."""
@@ -210,6 +246,9 @@ class IntroHandler:
             self._handle_heading_to_route()
         elif self._phase == IntroPhase.ROUTE_101:
             self._handle_route_101()
+        else:
+            # UNKNOWN phase or unhandled - just press A to advance
+            self.input.tap("A")
 
     def _press_a_for_dialogue(self) -> None:
         """Press A to advance dialogue, with slight spacing."""
@@ -292,10 +331,45 @@ class IntroHandler:
 
     def _handle_route_101(self) -> None:
         """
-        Handle Route 101 — walk north to trigger Birch encounter.
+        Handle Route 101 — walk north to trigger Birch encounter, then
+        press A through the bag dialogue and select Mudkip (first option).
 
-        The Birch encounter triggers when you walk into the tall grass
-        area at the north end of Route 101. Just keep walking north.
+        Sequence after walking north:
+          - Birch runs in, cutscene fires (scripted)
+          - Dialogue: "Help! My bag!" → press A
+          - Pokeball menu appears (3 choices: Treecko, Torchic, Mudkip)
+          - Mudkip is the 3rd option (Down x2, then A)
+          - Confirm dialogue → A
+          - Rival appears, optional battle
         """
-        # Walk north to trigger the Birch encounter script
-        self.input.walk("Up")
+        # Phase ticks < 60: walk north to reach tall grass / trigger encounter
+        if self._phase_ticks < 60:
+            self.input.walk("Up")
+            return
+
+        # After tick 60, the encounter should have triggered.
+        # If we still have no party (checked in tick()), keep pressing A
+        # to advance Birch's dialogue and reach the bag/starter menu.
+        #
+        # Mudkip selection sequence (approximate):
+        #   ticks 60-120:  press A to advance Birch dialogue
+        #   ticks 121-125: press Down to move cursor to Mudkip (3rd option)
+        #   ticks 126-128: press Down again
+        #   ticks 129-135: press A to select Mudkip
+        #   ticks 136+:    press A to confirm / advance remaining dialogue
+        t = self._phase_ticks
+        if t < 120:
+            # Advance dialogue
+            if t % 4 == 0:
+                self.input.tap("A")
+        elif t == 121:
+            self.input.tap("Down")
+        elif t == 125:
+            self.input.tap("Down")
+        elif 129 <= t <= 132:
+            if t % 2 == 0:
+                self.input.tap("A")
+        else:
+            # Confirm everything else with A
+            if t % 4 == 0:
+                self.input.tap("A")

@@ -28,7 +28,7 @@ try:
 except ImportError:
     pass  # dotenv not required
 
-from src.emulator.bizhawk_client import BizHawkClient
+from src.emulator.mgba_client import mGBAClient
 from src.input_controller import InputController
 from src.games.pokemon_gen3.state_detector import (
     PokemonGen3StateDetector, PokemonGen3State
@@ -61,7 +61,7 @@ class EmeraldAI:
 
     def __init__(self, strategy: str = "aggressive"):
         # Core components
-        self.client = BizHawkClient()
+        self.client = mGBAClient(host="127.0.0.1", port=8787)
         self.input = InputController(self.client)
         self.state_detector = PokemonGen3StateDetector(self.client)
         
@@ -607,6 +607,12 @@ class EmeraldAI:
             else:
                 logger.info("✓ Settings already optimal!")
             self._settings_configured = True  # Mark as attempted regardless of result
+            # Reconnect if settings config dropped the connection
+            if not self.client.is_connected():
+                logger.info('Reconnecting to mGBA after settings config...')
+                import time as _time
+                _time.sleep(1)
+                self.client.connect()
         
         # Get current position
         pos = self.state_detector.get_player_position()
