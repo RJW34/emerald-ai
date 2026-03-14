@@ -21,18 +21,27 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent.parent / ".env")
+except ImportError:
+    pass  # dotenv not required
+
 from src.emulator.bizhawk_client import BizHawkClient
 from src.input_controller import InputController
 from src.games.pokemon_gen3.state_detector import (
     PokemonGen3StateDetector, PokemonGen3State
 )
 from src.games.pokemon_gen3.battle_handler import (
-    PokemonGen3BattleHandler, BattleAction
+    PokemonGen3BattleHandler, BattleAction, BattleDecision
 )
 from src.ai.battle_ai import BattleAI, BattleContext, BattleStrategy
 from src.tracking.completion_tracker import CompletionTracker
 from src.games.pokemon_gen3.intro_handler import IntroHandler
 from src.games.pokemon_gen3.progression_handler import ProgressionHandler, GamePhase
+from src.brain import GameBrain
+from src.brain.config import BrainConfig
 
 logging.basicConfig(
     level=logging.INFO,
@@ -95,6 +104,9 @@ class EmeraldAI:
         self._new_game_step = 0
         self._new_game_input_delay = 0
         
+        # LLM brain (decision layer — uses OpenRouter, not Anthropic API)
+        self.brain = GameBrain(game_key="emerald")
+
         # Intro and progression handlers
         self.intro_handler = IntroHandler(self.state_detector, self.input)
         self.progression = ProgressionHandler(self.state_detector, self.input)
@@ -327,12 +339,67 @@ class EmeraldAI:
         logger.info("Battle ended")
         self._battle_context = None
 
+    def _get_brain_battle_decision(self, battle_state) -> dict | None:
+        """Ask brain for a battle decision. Returns None on failure."""
+        try:
+            player = battle_state.player_lead if battle_state else None
+            enemy = battle_state.enemy_lead if battle_state else None
+            if not player or not enemy:
+                return None
+
+            player_dict = {
+                "species": getattr(player, "species_name", "?"),
+                "level": getattr(player, "level", 0),
+                "hp": getattr(player, "hp", 0),
+                "max_hp": getattr(player, "max_hp", 1),
+                "types": [t.name for t in getattr(player, "types", []) if t],
+                "moves": [
+                    {
+                        "name": getattr(m, "name", "?"),
+                        "power": getattr(m, "power", 0),
+                        "type": getattr(m, "type", None) and m.type.name or "?",
+                        "pp": getattr(m, "pp", 0),
+                        "max_pp": getattr(m, "max_pp", 0),
+                    }
+                    for m in getattr(player, "moves", [])
+                    if m
+                ],
+                "status": getattr(player, "status", 0),
+            }
+            enemy_dict = {
+                "species": getattr(enemy, "species_name", "?"),
+                "level": getattr(enemy, "level", 0),
+                "hp": getattr(enemy, "hp", 0),
+                "max_hp": getattr(enemy, "max_hp", 1),
+                "types": [t.name for t in getattr(enemy, "types", []) if t],
+                "moves": [
+                    {
+                        "name": getattr(m, "name", "?"),
+                        "power": getattr(m, "power", 0),
+                        "type": getattr(m, "type", None) and m.type.name or "?",
+                    }
+                    for m in getattr(enemy, "moves", [])
+                    if m
+                ],
+                "status": getattr(enemy, "status", 0),
+            }
+
+            return self.brain.get_battle_action(
+                player_pokemon=player_dict,
+                enemy_pokemon=enemy_dict,
+                is_trainer=not battle_state.is_wild,
+                badges=self.tracker.progress.badges.count if self.tracker.progress else 0,
+            )
+        except Exception as e:
+            logger.debug(f"Brain battle decision failed: {e}")
+            return None
+
     def _handle_battle(self):
-        """Handle battle state using Battle AI."""
+        """Handle battle state using Brain (trainer) or Battle AI (wild)."""
         if not self._battle_context:
             self._on_battle_start()
             return
-        
+
         # Refresh battle state
         try:
             battle_state = self.battle_handler.read_battle_state()
@@ -342,10 +409,37 @@ class EmeraldAI:
             logger.warning(f"Failed to read battle state: {e}")
             self.input.tap("A")
             return
-        
-        # Get AI decision
-        decision = self.battle_ai.decide(self._battle_context)
-        
+
+        # Try brain for trainer battles, fall back to rule engine
+        brain_decision = None
+        if not battle_state.is_wild and self.brain.enabled:
+            brain_decision = self._get_brain_battle_decision(battle_state)
+
+        if brain_decision:
+            action_str = brain_decision.get("action", "fight")
+            reason = f"Brain: {brain_decision.get('reason', '')}"
+            if action_str == "fight":
+                decision = BattleDecision(
+                    action=BattleAction.FIGHT,
+                    move_index=brain_decision.get("move_index", 0),
+                    reason=reason,
+                )
+            elif action_str == "switch":
+                decision = BattleDecision(
+                    action=BattleAction.SWITCH,
+                    pokemon_index=brain_decision.get("pokemon_index", 1),
+                    reason=reason,
+                )
+            elif action_str == "run":
+                decision = BattleDecision(
+                    action=BattleAction.RUN,
+                    reason=reason,
+                )
+            else:
+                decision = self.battle_ai.decide(self._battle_context)
+        else:
+            decision = self.battle_ai.decide(self._battle_context)
+
         # Execute decision
         self._execute_battle_decision(decision)
 

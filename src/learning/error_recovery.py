@@ -23,6 +23,9 @@ from .stuck_detector import StuckReason, StuckDetector
 from .vision_analyzer import VisionAnalyzer
 from .database import get_database, StuckRecord
 
+if TYPE_CHECKING:
+    from ..brain import GameBrain
+
 logger = logging.getLogger(__name__)
 
 
@@ -75,7 +78,8 @@ class ErrorRecoverySystem:
                  stuck_detector: StuckDetector,
                  input_controller: "InputController",
                  state_detector: "PokemonGen3StateDetector",
-                 vision_analyzer: Optional[VisionAnalyzer] = None):
+                 vision_analyzer: Optional[VisionAnalyzer] = None,
+                 brain: Optional["GameBrain"] = None):
         """
         Initialize the error recovery system.
 
@@ -84,11 +88,13 @@ class ErrorRecoverySystem:
             input_controller: For executing recovery actions
             state_detector: For reading game state
             vision_analyzer: Optional vision API for advanced recovery
+            brain: Optional GameBrain for LLM-assisted recovery
         """
         self.stuck_detector = stuck_detector
         self.input = input_controller
         self.state_detector = state_detector
         self.vision = vision_analyzer
+        self.brain = brain
         self.db = get_database()
 
         # Recovery state
@@ -176,7 +182,46 @@ class ErrorRecoverySystem:
         return success
 
     def _get_recovery_action(self, reason: StuckReason) -> str:
-        """Get the next recovery action to try."""
+        """Get the next recovery action to try.
+
+        Consults brain before VISION level if available.
+        """
+        # Consult brain before falling to VISION level
+        if (
+            self._current_level.value >= RecoveryLevel.AGGRESSIVE.value
+            and self.brain is not None
+            and self.brain.enabled
+        ):
+            try:
+                position = self.state_detector.get_player_position()
+                map_loc = self.state_detector.get_map_location()
+                severity = (
+                    "severe"
+                    if self._current_level.value >= RecoveryLevel.VISION.value
+                    else "moderate"
+                )
+                recent = [a.action for a in self._recovery_history[-5:]]
+                brain_suggestion = self.brain.get_stuck_recovery(
+                    location=f"map {map_loc}",
+                    stuck_reason=reason.name,
+                    recent_attempts=recent,
+                    position=(position[0], position[1]),
+                    current_map=map_loc,
+                    severity=severity,
+                )
+                if brain_suggestion:
+                    action = brain_suggestion.get("action", "")
+                    if action in (
+                        "Up", "Down", "Left", "Right",
+                        "A", "B", "Start", "Select",
+                    ):
+                        logger.info(
+                            f"[brain] Recovery suggestion: {action} "
+                            f"({brain_suggestion.get('reason', '')})"
+                        )
+                        return action
+            except Exception as e:
+                logger.debug(f"Brain stuck recovery failed: {e}")
 
         if self._current_level == RecoveryLevel.VISION:
             # Try Vision API

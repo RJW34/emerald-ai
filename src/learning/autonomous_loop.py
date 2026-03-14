@@ -68,7 +68,8 @@ class AutonomousLearningLoop:
                  state_detector: "PokemonGen3StateDetector",
                  input_controller: "InputController",
                  bizhawk_client: "BizHawkClient",
-                 enable_vision: bool = True):
+                 enable_vision: bool = True,
+                 brain=None):
         """
         Initialize the autonomous learning loop.
 
@@ -77,6 +78,7 @@ class AutonomousLearningLoop:
             input_controller: Input controller
             bizhawk_client: BizHawk client (for vision screenshots)
             enable_vision: Whether to enable Vision API
+            brain: Optional GameBrain instance for LLM-assisted recovery
         """
         self.state_detector = state_detector
         self.input = input_controller
@@ -94,7 +96,8 @@ class AutonomousLearningLoop:
             self.stuck_detector,
             input_controller,
             state_detector,
-            self.vision_analyzer
+            self.vision_analyzer,
+            brain=brain,
         )
 
         self.db = get_database()

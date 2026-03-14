@@ -20,6 +20,16 @@ src/
   input_controller.py              # Button input abstraction (tap, hold, walk, stop_walking)
   obs_bridge.py                    # OBS overlay updates
 
+  brain/
+    __init__.py                        # GameBrain — LLM decision entry point (OpenRouter)
+    llm_client.py                      # OpenRouter API wrapper
+    config.py                          # Model tiers, rate limits, env var loading
+    state_formatter.py                 # Game state → compact LLM prompt
+    prompts.py                        # System prompts (game-specific variants)
+    decision_cache.py                  # TTL-based decision cache
+    decision_log.py                    # JSONL decision logging
+    replay_compiler.py                 # Decision logs → Lua replay script
+
   emulator/
     bizhawk_client.py              # File-based IPC with BizHawk (command.txt/response.txt)
     bizhawk_socket_client.py       # WebSocket-based BizHawk client (alternative)
