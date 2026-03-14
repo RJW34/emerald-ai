@@ -59,9 +59,9 @@ class EmeraldAI:
     into a coherent game loop.
     """
 
-    def __init__(self, strategy: str = "aggressive"):
+    def __init__(self, strategy: str = "aggressive", host: str = "127.0.0.1", port: int = 8787):
         # Core components
-        self.client = mGBAClient(host="127.0.0.1", port=8787)
+        self.client = mGBAClient(host=host, port=port)
         self.input = InputController(self.client)
         self.state_detector = PokemonGen3StateDetector(self.client)
         
@@ -766,9 +766,11 @@ def main():
         default="aggressive",
         help="Battle strategy"
     )
+    parser.add_argument("--host", default="127.0.0.1", help="mGBA bridge host")
+    parser.add_argument("--port", type=int, default=8787, help="mGBA bridge port")
     args = parser.parse_args()
     
-    ai = EmeraldAI(strategy=args.strategy)
+    ai = EmeraldAI(strategy=args.strategy, host=args.host, port=args.port)
     ai.run()
 
 
